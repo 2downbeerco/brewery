@@ -1,0 +1,1194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="2 Down Brew">
+<title>2 Down Brewery — Brew Ops</title>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #F5F6FA; --surface: #FFFFFF; --border: #E2E5EC;
+    --muted: #7A8394; --text: #1A1D23; --accent: #D4821A;
+    --accent-bg: #FFF4E6; --blue: #2563EB; --green: #16A34A;
+    --orange: #D4821A; --red: #DC2626; --hover: #F0F2F7;
+    --sidebar-bg: #000000; --sidebar-text: #C8CEDD; --sidebar-active: #F5A623;
+    --sans: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+  }
+  html, body { height: 100%; background: var(--bg); color: var(--text); font-family: var(--sans); overflow: hidden; font-size: 15px; }
+  button { cursor: pointer; font-family: var(--sans); border: none; outline: none; }
+  input, select, textarea { font-family: var(--sans); outline: none; }
+
+  #app { display: flex; height: 100vh; }
+  #sidebar { width: 230px; flex-shrink: 0; background: var(--sidebar-bg); display: flex; flex-direction: column; overflow: hidden; }
+  #main { flex: 1; display: flex; flex-direction: column; overflow: hidden; min-width: 0; }
+  #topbar { padding: 16px 28px; border-bottom: 1px solid var(--border); background: var(--surface); display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; gap: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
+  #content { flex: 1; overflow-y: auto; padding: 28px; }
+
+  .sidebar-logo { padding: 24px 20px 20px; border-bottom: 1px solid rgba(255,255,255,0.08); }
+  .logo-top { font-size: 20px; font-weight: 700; color: var(--sidebar-active); letter-spacing: 2px; line-height: 1; }
+  .logo-sub { font-size: 11px; color: rgba(200,206,221,0.5); letter-spacing: 3px; text-transform: uppercase; margin-top: 5px; }
+  .nav-items { padding: 14px 0; flex: 1; overflow-y: auto; }
+  .nav-item { display: flex; align-items: center; gap: 12px; padding: 12px 20px; cursor: pointer; font-size: 14px; font-weight: 500; color: var(--sidebar-text); border-left: 3px solid transparent; transition: all 0.15s; white-space: nowrap; }
+  .nav-item:hover { color: #fff; background: rgba(255,255,255,0.06); }
+  .nav-item.active { color: var(--sidebar-active); background: rgba(245,166,35,0.1); border-left-color: var(--sidebar-active); font-weight: 600; }
+  .nav-icon { font-size: 16px; width: 20px; text-align: center; }
+
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 22px; margin-bottom: 20px; box-shadow: 0 1px 4px rgba(0,0,0,0.05); }
+  .card-title { font-size: 13px; font-weight: 700; color: var(--text); margin-bottom: 16px; display: flex; align-items: center; justify-content: space-between; }
+  .section-title { font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 16px; }
+
+  .btn { padding: 9px 18px; border-radius: 8px; font-size: 13px; font-weight: 600; letter-spacing: 0.3px; transition: all 0.15s; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; cursor: pointer; border: none; }
+  .btn:hover { filter: brightness(0.94); }
+  .btn-primary { background: var(--accent); color: #fff; }
+  .btn-ghost { background: var(--hover); color: var(--text); border: 1px solid var(--border); }
+  .btn-danger { background: var(--red); color: #fff; }
+  .btn-green { background: var(--green); color: #fff; }
+  .btn-sm { padding: 6px 12px; font-size: 12px; border-radius: 6px; }
+
+  .inp { background: var(--surface); border: 1.5px solid var(--border); border-radius: 8px; padding: 10px 13px; color: var(--text); font-size: 14px; width: 100%; transition: border-color 0.15s; }
+  .inp:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(212,130,26,0.12); }
+  .lbl { font-size: 12px; font-weight: 600; color: var(--muted); margin-bottom: 6px; display: block; }
+  .inp-sm { padding: 7px 10px; font-size: 13px; }
+
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+  .grid3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 18px; }
+  .grid4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 22px; }
+
+  .stat-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 20px 24px; box-shadow: 0 1px 4px rgba(0,0,0,0.05); }
+  .stat-num { font-size: 32px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1; }
+  .stat-lbl { font-size: 12px; font-weight: 500; color: var(--muted); margin-top: 6px; }
+  .stat-sub { font-size: 11px; color: var(--muted); margin-top: 4px; }
+
+  .tbl { width: 100%; border-collapse: collapse; font-size: 14px; }
+  .tbl th { text-align: left; padding: 10px 14px; border-bottom: 2px solid var(--border); color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.8px; font-weight: 700; white-space: nowrap; background: var(--bg); }
+  .tbl td { padding: 12px 14px; border-bottom: 1px solid var(--border); vertical-align: middle; line-height: 1.5; }
+  .tbl tr:last-child td { border-bottom: none; }
+  .tbl tr:hover td { background: var(--hover); }
+  .tbl-wrap { overflow-x: auto; }
+
+  .badge { display: inline-block; padding: 3px 9px; border-radius: 5px; font-size: 11px; font-weight: 700; letter-spacing: 0.5px; }
+  .badge-green { background: #DCFCE7; color: #15803D; }
+  .badge-orange { background: #FEF3C7; color: #92400E; }
+  .badge-red { background: #FEE2E2; color: #991B1B; }
+  .badge-blue { background: #DBEAFE; color: #1E40AF; }
+  .badge-purple { background: #EDE9FE; color: #5B21B6; }
+  .badge-gray { background: #F3F4F6; color: #374151; }
+
+  .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.4); display: flex; align-items: center; justify-content: center; z-index: 1000; padding: 16px; }
+  .modal-box { background: #fff; color: #000; border-radius: 12px; padding: 32px; width: 100%; max-width: 560px; max-height: 90vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,0.2); }
+  .modal-title { font-size: 18px; font-weight: 700; margin-bottom: 24px; }
+  .modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 24px; }
+
+  .form-group { margin-bottom: 16px; }
+  .form-row { display: grid; gap: 12px; }
+  .form-row-2 { grid-template-columns: 1fr 1fr; }
+  .form-row-3 { grid-template-columns: 1fr 1fr 1fr; }
+
+  .topbar-title { font-size: 16px; font-weight: 700; color: var(--text); }
+  .topbar-date { font-size: 13px; color: var(--muted); font-weight: 500; }
+  .empty { color: var(--muted); font-size: 14px; text-align: center; padding: 40px; }
+
+  #toast { position: fixed; bottom: 24px; right: 24px; background: var(--green); color: #fff; padding: 11px 22px; border-radius: 8px; font-weight: 600; font-size: 13px; opacity: 0; transition: opacity 0.3s; z-index: 2000; pointer-events: none; box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
+  #toast.show { opacity: 1; }
+
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+  .tank-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 14px; }
+  .tank-card { background: var(--surface); border: 1.5px solid var(--border); border-radius: 10px; padding: 16px; position: relative; transition: box-shadow 0.15s; }
+  .tank-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.08); }
+  .tank-card.occupied { border-color: var(--accent); }
+  .tank-name { font-size: 12px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; }
+  .tank-beer { font-size: 15px; font-weight: 700; margin-top: 6px; }
+  .tank-vol { font-size: 13px; color: var(--muted); margin-top: 2px; }
+  .tank-days { font-size: 11px; color: var(--muted); margin-top: 8px; }
+  .tank-stage-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 5px; }
+  .tank-empty-label { font-size: 13px; color: var(--muted); margin-top: 6px; font-style: italic; }
+  .fill-bar-wrap { background: var(--bg); border-radius: 4px; height: 6px; margin-top: 10px; overflow: hidden; }
+  .fill-bar { height: 100%; border-radius: 4px; transition: width 0.4s; }
+  .rm-bar-wrap { flex: 1; background: var(--bg); border-radius: 3px; height: 5px; overflow: hidden; }
+  .rm-bar { height: 100%; border-radius: 3px; }
+
+  .sched-row { display: flex; align-items: stretch; gap: 0; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; margin-bottom: 10px; }
+  .sched-date { background: var(--sidebar-bg); color: var(--sidebar-active); padding: 14px 16px; display: flex; flex-direction: column; align-items: center; justify-content: center; min-width: 72px; font-weight: 700; flex-shrink: 0; }
+  .sched-date .day { font-size: 22px; line-height: 1; }
+  .sched-date .mon { font-size: 11px; letter-spacing: 1px; text-transform: uppercase; opacity: 0.7; }
+  .sched-body { flex: 1; padding: 14px 18px; background: var(--surface); display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+  .sched-body .beer-name { font-size: 15px; font-weight: 700; }
+  .sched-body .sched-meta { font-size: 13px; color: var(--muted); }
+  .sched-actions { display: flex; align-items: center; gap: 8px; padding: 14px 16px; background: var(--surface); flex-shrink: 0; }
+
+  .beer-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
+  .keg-row { display: flex; align-items: center; justify-content: space-between; padding: 11px 0; border-bottom: 1px solid var(--border); }
+  .keg-row:last-child { border-bottom: none; }
+
+  /* ── Brew Log specific ── */
+  .brew-list-item { border: 1px solid var(--border); border-radius: 10px; padding: 16px 20px; margin-bottom: 12px; background: var(--surface); display: flex; align-items: center; gap: 16px; cursor: pointer; transition: box-shadow 0.15s; }
+  .brew-list-item:hover { box-shadow: 0 3px 10px rgba(0,0,0,0.07); }
+  .brew-list-item.active-brew { border-color: var(--accent); background: var(--accent-bg); }
+
+  .brew-sheet { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  .brew-section { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 20px; }
+  .brew-section-title { font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 14px; display: flex; align-items: center; justify-content: space-between; }
+
+  .ingredient-row { display: grid; grid-template-columns: 1fr auto auto 28px; gap: 8px; align-items: center; margin-bottom: 8px; }
+  .ingredient-row-header { display: grid; grid-template-columns: 1fr auto auto 28px; gap: 8px; margin-bottom: 6px; }
+  .ing-lbl { font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.6px; padding: 0 4px; }
+  .del-btn { width: 24px; height: 24px; border-radius: 5px; background: none; border: none; color: var(--muted); font-size: 14px; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.15s; }
+  .del-btn:hover { background: #FEE2E2; color: var(--red); }
+
+  .brew-status-bar { display: flex; gap: 0; border-radius: 10px; overflow: hidden; border: 1px solid var(--border); margin-bottom: 20px; }
+  .brew-status-step { flex: 1; padding: 12px 8px; text-align: center; font-size: 12px; font-weight: 600; color: var(--muted); background: var(--surface); border-right: 1px solid var(--border); transition: all 0.2s; }
+  .brew-status-step:last-child { border-right: none; }
+  .brew-status-step.done { background: #DCFCE7; color: #15803D; }
+  .brew-status-step.current { background: var(--accent); color: #fff; }
+
+  .stock-check-row { display: flex; align-items: center; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+  .stock-check-row:last-child { border-bottom: none; }
+
+  #mobile-nav { display: none; background: var(--sidebar-bg); border-top: 1px solid rgba(255,255,255,0.08); flex-shrink: 0; }
+  .mobile-nav-inner { display: flex; overflow-x: auto; padding: 6px 4px; gap: 2px; scrollbar-width: none; }
+  .mobile-nav-inner::-webkit-scrollbar { display: none; }
+  .mobile-nav-item { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 8px 14px; border-radius: 8px; cursor: pointer; font-size: 11px; font-weight: 500; color: var(--sidebar-text); white-space: nowrap; transition: all 0.15s; flex-shrink: 0; }
+  .mobile-nav-item.active { color: var(--sidebar-active); background: rgba(245,166,35,0.15); }
+  .mobile-nav-item span:first-child { font-size: 18px; }
+
+  @media (max-width: 700px) {
+    #sidebar { display: none; }
+    #mobile-nav { display: block; }
+    #content { padding: 14px; }
+    .grid4 { grid-template-columns: repeat(2,1fr); gap: 10px; }
+    .grid2, .grid3 { grid-template-columns: 1fr; }
+    .tank-grid { grid-template-columns: repeat(2, 1fr); }
+    .topbar-date { display: none; }
+    .stat-num { font-size: 26px; }
+    .form-row-2, .form-row-3 { grid-template-columns: 1fr; }
+    .brew-sheet { grid-template-columns: 1fr; }
+  }
+  @media (max-width: 400px) { .tank-grid { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<div id="toast"></div>
+
+<div id="login-screen" style="display:flex;align-items:center;justify-content:center;min-height:100vh;background:var(--bg)">
+  <div style="background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:48px 40px;max-width:360px;width:90%;text-align:center;box-shadow:0 8px 40px rgba(0,0,0,0.08)">
+    <img src="data:image/png;base64,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"
+      alt="2 Down Beer Co." style="width:180px;filter:none;margin:0 auto 28px;display:block">
+    <div style="font-size:13px;font-weight:600;color:var(--muted);letter-spacing:2px;text-transform:uppercase;margin-bottom:24px;">Brew Ops</div>
+    <input type="password" id="brew-pw" class="inp" placeholder="Password"
+      style="width:100%;text-align:center;font-size:18px;letter-spacing:4px;margin-bottom:12px"
+      onkeydown="if(event.key==='Enter')checkBrewPw()">
+    <button onclick="checkBrewPw()" style="width:100%;padding:13px;background:var(--accent);color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;letter-spacing:1px">ENTER</button>
+    <div id="brew-pw-err" style="color:var(--red);font-size:12px;margin-top:10px;height:16px"></div>
+  </div>
+</div>
+
+<div id="app" style="display:none">
+  <div id="sidebar">
+    <div class="sidebar-logo">
+      <div class="logo-top">2 DOWN</div>
+      <div class="logo-sub">Brew Ops</div>
+    </div>
+    <div class="nav-items" id="sidebar-nav"></div>
+  </div>
+  <div id="main">
+    <div id="topbar">
+      <div class="topbar-title" id="topbar-title">Dashboard</div>
+      <div class="topbar-date" id="topbar-date"></div>
+    </div>
+    <div id="content"></div>
+  </div>
+  <div id="mobile-nav"><div class="mobile-nav-inner" id="mobile-nav-inner"></div></div>
+</div>
+
+<script>
+// ── Seed Data ─────────────────────────────────────────────────────────────────
+const BEERS = [
+  { code:"BB", name:"Basil Blonde",  color:"#F5C842", style:"Blonde Ale",     abv:4.8, ibu:15 },
+  { code:"GR", name:"Gold Rush",     color:"#A3C96B", style:"India Pale Ale", abv:6.2, ibu:55 },
+  { code:"MP", name:"Missing Piece", color:"#E87C3E", style:"Wheat Beer",     abv:5.1, ibu:18 },
+  { code:"DC", name:"Daddy Cool",    color:"#A07060", style:"Brown Ale",      abv:5.5, ibu:22 },
+  { code:"OW", name:"Other Weiss",   color:"#58A6FF", style:"Hefeweizen",     abv:5.0, ibu:12 },
+];
+
+// ── State ─────────────────────────────────────────────────────────────────────
+function loadLS(k) { try { return JSON.parse(localStorage.getItem(k)); } catch(e){ return null; } }
+function saveState() {
+  localStorage.setItem('brew_tanks',    JSON.stringify(state.tanks));
+  localStorage.setItem('brew_raw',      JSON.stringify(state.rawMaterials));
+  localStorage.setItem('brew_beer_inv', JSON.stringify(state.beerInventory));
+  localStorage.setItem('brew_schedule', JSON.stringify(state.schedule));
+  localStorage.setItem('brew_logs',     JSON.stringify(state.brewLogs));
+}
+
+let state = {
+  tanks: loadLS('brew_tanks') || [
+    { id:'FV1', name:'FV 1', type:'Fermenter',  cap:1000, beer:'BB', vol:950, stage:'Fermenting',  since:'2025-06-10', temp:20, gravity:1.014 },
+    { id:'FV2', name:'FV 2', type:'Fermenter',  cap:1000, beer:'GR', vol:900, stage:'Conditioning',since:'2025-06-05', temp:4,  gravity:1.010 },
+    { id:'FV3', name:'FV 3', type:'Fermenter',  cap:1000, beer:null, vol:0,   stage:'Empty',       since:null, temp:null, gravity:null },
+    { id:'FV4', name:'FV 4', type:'Fermenter',  cap:1000, beer:'MP', vol:800, stage:'Fermenting',  since:'2025-06-12', temp:21, gravity:1.018 },
+    { id:'BBT1',name:'BBT 1',type:'Bright Beer',cap:500,  beer:'OW', vol:480, stage:'Conditioning',since:'2025-06-08', temp:2,  gravity:1.008 },
+    { id:'BBT2',name:'BBT 2',type:'Bright Beer',cap:500,  beer:'DC', vol:500, stage:'Ready',       since:'2025-06-03', temp:2,  gravity:1.008 },
+    { id:'BBT3',name:'BBT 3',type:'Bright Beer',cap:500,  beer:null, vol:0,   stage:'Empty',       since:null, temp:null, gravity:null },
+  ],
+  rawMaterials: loadLS('brew_raw') || [
+    { id:1,  name:'Pale Malt (Pilsner)', unit:'kg',  stock:850,  reorder:200, category:'Malt' },
+    { id:2,  name:'Wheat Malt',          unit:'kg',  stock:320,  reorder:100, category:'Malt' },
+    { id:3,  name:'Crystal 60',          unit:'kg',  stock:90,   reorder:50,  category:'Malt' },
+    { id:4,  name:'Carapils',            unit:'kg',  stock:40,   reorder:50,  category:'Malt' },
+    { id:5,  name:'Centennial Hops',     unit:'kg',  stock:12,   reorder:5,   category:'Hops' },
+    { id:6,  name:'Cascade Hops',        unit:'kg',  stock:8,    reorder:5,   category:'Hops' },
+    { id:7,  name:'Citra Hops',          unit:'kg',  stock:3.5,  reorder:4,   category:'Hops' },
+    { id:8,  name:'Saaz Hops',           unit:'kg',  stock:6,    reorder:3,   category:'Hops' },
+    { id:9,  name:'Lallemand Wit Yeast', unit:'pkt', stock:24,   reorder:10,  category:'Yeast' },
+    { id:10, name:'Fermentis US-05',     unit:'pkt', stock:18,   reorder:8,   category:'Yeast' },
+    { id:11, name:'Gypsum',              unit:'kg',  stock:5,    reorder:2,   category:'Water Chem' },
+    { id:12, name:'Lactic Acid',         unit:'L',   stock:3,    reorder:1,   category:'Water Chem' },
+    { id:13, name:'Finings (Biofine)',   unit:'L',   stock:8,    reorder:3,   category:'Adjuncts' },
+    { id:14, name:'CO2',                 unit:'kg',  stock:45,   reorder:20,  category:'Gases' },
+    { id:15, name:'Caustic (CIP)',       unit:'kg',  stock:30,   reorder:10,  category:'Cleaning' },
+    { id:16, name:'Peracetic Acid',      unit:'L',   stock:12,   reorder:5,   category:'Cleaning' },
+  ],
+  beerInventory: loadLS('brew_beer_inv') || [
+    { id:1, beer:'BB', kegs20:8,  kegs50:2, litres:260, location:'Cold Room' },
+    { id:2, beer:'GR', kegs20:4,  kegs50:0, litres:80,  location:'Cold Room' },
+    { id:3, beer:'MP', kegs20:0,  kegs50:0, litres:0,   location:'Cold Room' },
+    { id:4, beer:'DC', kegs20:12, kegs50:3, litres:390, location:'Cold Room' },
+    { id:5, beer:'OW', kegs20:6,  kegs50:1, litres:170, location:'Cold Room' },
+  ],
+  schedule: loadLS('brew_schedule') || [
+    { id:1, date:'2025-06-18', beer:'GR', vol:1000, notes:'Scale up grain by 5%',   status:'Planned' },
+    { id:2, date:'2025-06-22', beer:'BB', vol:1000, notes:'Dry hop addition day 3', status:'Planned' },
+    { id:3, date:'2025-06-28', beer:'MP', vol:800,  notes:'Lower mash temp to 64°C',status:'Planned' },
+    { id:4, date:'2025-07-05', beer:'OW', vol:1000, notes:'Standard recipe',        status:'Planned' },
+  ],
+  // brewLogs: each log has header info + ingredient lines
+  // status: Draft | In Progress | Completed
+  // inventoryDeducted: bool — true once stock has been deducted
+  brewLogs: loadLS('brew_logs') || [],
+  nextTankId: 8, nextRMId: 17, nextSchedId: 5, nextBrewId: 1,
+};
+// make sure nextBrewId is beyond existing logs
+if (state.brewLogs.length) {
+  state.nextBrewId = Math.max(...state.brewLogs.map(b=>b.id)) + 1;
+}
+
+// ── Nav ───────────────────────────────────────────────────────────────────────
+const TABS = [
+  { id:'dashboard', label:'Dashboard',     icon:'🏠' },
+  { id:'brew_log',  label:'Brew Log',      icon:'📋' },
+  { id:'tanks',     label:'Tanks',         icon:'🛢️' },
+  { id:'raw',       label:'Raw Materials', icon:'🌾' },
+  { id:'beer_inv',  label:'Beer Inventory',icon:'🍺' },
+  { id:'schedule',  label:'Schedule',      icon:'📅' },
+];
+
+let currentTab = 'dashboard';
+
+function renderNav() {
+  const activeBrew = state.brewLogs.find(b => b.status === 'In Progress');
+  document.getElementById('sidebar-nav').innerHTML = TABS.map(t => `
+    <div class="nav-item ${t.id===currentTab?'active':''}" onclick="switchTab('${t.id}')">
+      <span class="nav-icon">${t.icon}</span> ${t.label}
+      ${t.id==='brew_log' && activeBrew ? '<span style="margin-left:auto;width:7px;height:7px;border-radius:50%;background:var(--orange);flex-shrink:0;"></span>' : ''}
+    </div>`).join('');
+  document.getElementById('mobile-nav-inner').innerHTML = TABS.map(t => `
+    <div class="mobile-nav-item ${t.id===currentTab?'active':''}" onclick="switchTab('${t.id}')">
+      <span>${t.icon}</span><span>${t.label}</span>
+    </div>`).join('');
+}
+
+function switchTab(id) {
+  currentTab = id;
+  document.getElementById('topbar-title').textContent = TABS.find(t=>t.id===id)?.label || '';
+  renderNav();
+  renderContent();
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function beer(code) { return BEERS.find(b=>b.code===code); }
+function beerName(code) { const b=beer(code); return b?b.name:code||'—'; }
+function beerColor(code) { const b=beer(code); return b?b.color:'#ccc'; }
+function toast(msg, ok=true) {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.style.background = ok?'var(--green)':'var(--red)';
+  t.classList.add('show'); setTimeout(()=>t.classList.remove('show'), 2500);
+}
+function fmtDate(d) {
+  if (!d) return '—';
+  return new Date(d+'T00:00:00').toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'});
+}
+function daysSince(d) {
+  if (!d) return null;
+  return Math.max(0, Math.floor((Date.now()-new Date(d+'T00:00:00').getTime())/86400000));
+}
+function stageBadge(stage) {
+  const map = { Fermenting:'badge-blue', Conditioning:'badge-purple', Ready:'badge-green', Empty:'badge-gray', Kegging:'badge-orange' };
+  return `<span class="badge ${map[stage]||'badge-gray'}">${stage}</span>`;
+}
+function rmStatus(item) {
+  const pct = Math.min(100, Math.round(item.stock/(item.reorder*4)*100));
+  const low = item.stock<=item.reorder, critical = item.stock<=item.reorder*0.5;
+  const color = critical?'var(--red)':low?'var(--orange)':'var(--green)';
+  return {pct,low,critical,color};
+}
+
+// ── renderContent ─────────────────────────────────────────────────────────────
+function renderContent() {
+  const c = document.getElementById('content');
+  if (currentTab==='dashboard') c.innerHTML = renderDashboard();
+  if (currentTab==='brew_log')  c.innerHTML = renderBrewLog();
+  if (currentTab==='tanks')     c.innerHTML = renderTanks();
+  if (currentTab==='raw')       c.innerHTML = renderRaw();
+  if (currentTab==='beer_inv')  c.innerHTML = renderBeerInv();
+  if (currentTab==='schedule')  c.innerHTML = renderSchedule();
+}
+
+// ── Dashboard ─────────────────────────────────────────────────────────────────
+function renderDashboard() {
+  const activeTanks = state.tanks.filter(t=>t.beer).length;
+  const emptyTanks  = state.tanks.filter(t=>!t.beer).length;
+  const lowStock    = state.rawMaterials.filter(r=>r.stock<=r.reorder).length;
+  const totalKegs   = state.beerInventory.reduce((s,b)=>s+b.kegs20+b.kegs50,0);
+  const totalLitres = state.beerInventory.reduce((s,b)=>s+b.litres,0);
+  const nextBrew    = state.schedule.filter(s=>s.status==='Planned').sort((a,b)=>a.date.localeCompare(b.date))[0];
+  const activeBrew  = state.brewLogs.find(b=>b.status==='In Progress');
+
+  const alerts = [];
+  if (activeBrew) alerts.push({type:'brew', msg:`Active brew in progress: <strong>${beerName(activeBrew.beer)}</strong> · ${fmtDate(activeBrew.date)} · ${activeBrew.targetVol}L`});
+  if (lowStock>0) alerts.push({type:'warn', msg:`${lowStock} raw material${lowStock>1?'s':''} at or below reorder level`});
+  state.tanks.filter(t=>t.stage==='Ready').forEach(t=>alerts.push({type:'info',msg:`${t.name} (${beerName(t.beer)}) is ready for kegging`}));
+  state.tanks.filter(t=>t.stage==='Fermenting'&&daysSince(t.since)>=7).forEach(t=>
+    alerts.push({type:'info',msg:`${t.name} has been fermenting ${daysSince(t.since)} days — check gravity`}));
+
+  return `
+    <div class="grid4">
+      <div class="stat-card"><div class="stat-num">${activeTanks}</div><div class="stat-lbl">Active Tanks</div><div class="stat-sub">${emptyTanks} empty</div></div>
+      <div class="stat-card"><div class="stat-num">${totalKegs}</div><div class="stat-lbl">Kegs in Cold Room</div><div class="stat-sub">${totalLitres}L across all beers</div></div>
+      <div class="stat-card"><div class="stat-num" style="color:${lowStock?'var(--red)':'var(--green)'}">${lowStock}</div><div class="stat-lbl">Low Stock Items</div><div class="stat-sub">raw materials below reorder</div></div>
+      <div class="stat-card"><div class="stat-num" style="font-size:22px;">${nextBrew?fmtDate(nextBrew.date):'—'}</div><div class="stat-lbl">Next Brew</div><div class="stat-sub">${nextBrew?beerName(nextBrew.beer)+' · '+nextBrew.vol+'L':'Nothing scheduled'}</div></div>
+    </div>
+    ${alerts.length?`
+    <div class="card" style="border-color:${alerts[0].type==='brew'?'var(--orange)':alerts[0].type==='warn'?'var(--red)':'var(--blue)'};">
+      <div class="section-title">Alerts & Actions</div>
+      ${alerts.map(a=>`<div style="display:flex;align-items:flex-start;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);font-size:14px;">
+        <span>${a.type==='brew'?'🟠':a.type==='warn'?'🔴':'🔵'}</span><span>${a.msg}</span></div>`).join('')}
+    </div>`:''}
+    <div class="grid2">
+      <div class="card">
+        <div class="section-title">Tank Status</div>
+        ${state.tanks.map(t=>`
+          <div style="display:flex;align-items:center;gap:12px;padding:9px 0;border-bottom:1px solid var(--border);">
+            <div style="width:10px;height:10px;border-radius:50%;background:${t.beer?beerColor(t.beer):'var(--border)'};flex-shrink:0;"></div>
+            <div style="flex:1;min-width:0;"><div style="font-size:14px;font-weight:600;">${t.name}</div><div style="font-size:12px;color:var(--muted);">${t.beer?beerName(t.beer):'Empty'}</div></div>
+            ${stageBadge(t.stage)}
+          </div>`).join('')}
+      </div>
+      <div class="card">
+        <div class="section-title">Cold Room — Beer Stock</div>
+        ${state.beerInventory.map(b=>`
+          <div class="keg-row">
+            <div style="display:flex;align-items:center;gap:10px;">
+              <div class="beer-dot" style="background:${beerColor(b.beer)}"></div>
+              <div><div style="font-size:14px;font-weight:600;">${beerName(b.beer)}</div>
+              <div style="font-size:12px;color:var(--muted);">${b.kegs20}×20L · ${b.kegs50}×50L</div></div>
+            </div>
+            <div style="font-size:16px;font-weight:700;color:${b.litres===0?'var(--red)':b.litres<80?'var(--orange)':'var(--text)'};">${b.litres}L</div>
+          </div>`).join('')}
+      </div>
+    </div>`;
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ── BREW LOG TAB ──────────────────────────────────────────────────────────────
+// ══════════════════════════════════════════════════════════════════════════════
+
+// We store the "open" brew log id in window._openBrewId
+// Views: list → detail (edit/view)
+
+function renderBrewLog() {
+  if (window._openBrewId != null) return renderBrewDetail(window._openBrewId);
+  return renderBrewList();
+}
+
+function renderBrewList() {
+  const logs = [...state.brewLogs].sort((a,b)=>b.date.localeCompare(a.date));
+  const statusClass = { Draft:'badge-gray', 'In Progress':'badge-orange', Completed:'badge-green' };
+
+  return `
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:12px;">
+      <div>
+        <div style="font-size:18px;font-weight:700;">Brew Log</div>
+        <div style="font-size:13px;color:var(--muted);margin-top:2px;">Each entry captures the full recipe and deducts stock on completion.</div>
+      </div>
+      <button class="btn btn-primary" onclick="newBrewLog()">+ New Brew</button>
+    </div>
+
+    ${logs.length===0?`<div class="empty" style="background:var(--surface);border:1px solid var(--border);border-radius:12px;">
+      No brews logged yet.<br><br><button class="btn btn-primary" onclick="newBrewLog()">Start your first brew</button></div>`
+    : logs.map(b=>{
+        const inProgress = b.status==='In Progress';
+        return `
+        <div class="brew-list-item ${inProgress?'active-brew':''}" onclick="openBrewLog(${b.id})">
+          <div style="width:36px;height:36px;border-radius:8px;background:${beerColor(b.beer)};flex-shrink:0;"></div>
+          <div style="flex:1;min-width:0;">
+            <div style="font-size:15px;font-weight:700;">${beerName(b.beer)}</div>
+            <div style="font-size:13px;color:var(--muted);">${fmtDate(b.date)} · ${b.targetVol}L${b.brewer?' · '+b.brewer:''}</div>
+          </div>
+          <div style="text-align:right;flex-shrink:0;">
+            <span class="badge ${statusClass[b.status]||'badge-gray'}">${b.status}</span>
+            ${b.inventoryDeducted?'<div style="font-size:11px;color:var(--green);margin-top:4px;">✓ Stock deducted</div>':''}
+          </div>
+        </div>`;}).join('')}`;
+}
+
+function newBrewLog() {
+  const id = state.nextBrewId++;
+  const today = new Date().toISOString().slice(0,10);
+  const log = {
+    id, date: today, beer: BEERS[0].code, targetVol: 1000,
+    brewer: '', tank: '', notes: '',
+    // Process params
+    mashTemp: 66, mashTime: 60, boilTime: 60, yieldEst: '',
+    ogTarget: '', fgTarget: '',
+    // Ingredients: [{rmId, name, qty, unit}]
+    grains: [], hops: [], yeast: [], other: [],
+    status: 'Draft', inventoryDeducted: false,
+  };
+  state.brewLogs.push(log);
+  saveState();
+  window._openBrewId = id;
+  renderNav();
+  renderContent();
+}
+
+function openBrewLog(id) {
+  window._openBrewId = id;
+  renderContent();
+}
+
+function closeBrewLog() {
+  window._openBrewId = null;
+  renderContent();
+}
+
+function renderBrewDetail(id) {
+  const log = state.brewLogs.find(b=>b.id===id);
+  if (!log) { window._openBrewId=null; return renderBrewList(); }
+
+  const steps = ['Draft','In Progress','Completed'];
+  const stepIdx = steps.indexOf(log.status);
+  const isCompleted = log.status==='Completed';
+  const editable = !isCompleted;
+
+  // Build ingredient selectors
+  const rmOptions = state.rawMaterials.map(r=>`<option value="${r.id}">${r.name} (${r.stock} ${r.unit} in stock)</option>`).join('');
+  const rmByCateg = cat => state.rawMaterials.filter(r=>r.category===cat);
+
+  function ingRows(section, items, catFilter) {
+    const rmList = catFilter ? state.rawMaterials.filter(r=>catFilter.includes(r.category)) : state.rawMaterials;
+    const rmOpts = rmList.map(r=>`<option value="${r.id}" data-unit="${r.unit}">${r.name}</option>`).join('');
+    return `
+      <div class="ingredient-row-header">
+        <div class="ing-lbl">Ingredient</div>
+        <div class="ing-lbl" style="width:80px;">Qty</div>
+        <div class="ing-lbl" style="width:60px;">Unit</div>
+        <div></div>
+      </div>
+      ${items.map((ing,idx)=>`
+        <div class="ingredient-row">
+          <select class="inp inp-sm" ${!editable?'disabled':''} onchange="updateIng('${section}',${idx},'rmId',this.value);updateIngUnit('${section}',${idx},this)">
+            <option value="">— select —</option>
+            ${rmOpts.replace(`value="${ing.rmId}"`,`value="${ing.rmId}" selected`)}
+          </select>
+          <input class="inp inp-sm" type="number" step="0.01" value="${ing.qty||''}" style="width:80px;" ${!editable?'disabled':''}
+            onchange="updateIng('${section}',${idx},'qty',+this.value)" placeholder="0">
+          <input class="inp inp-sm" value="${ing.unit||''}" style="width:60px;" ${!editable?'disabled':''}
+            onchange="updateIng('${section}',${idx},'unit',this.value)" placeholder="kg">
+          ${editable?`<button class="del-btn" onclick="removeIng('${section}',${idx})">✕</button>`:'<div></div>'}
+        </div>`).join('')}
+      ${editable?`<button class="btn btn-ghost btn-sm" style="margin-top:6px;" onclick="addIng('${section}','${catFilter?catFilter[0]:''}')">+ Add</button>`:''}`;
+  }
+
+  // Stock availability check
+  function stockCheck() {
+    const allIngs = [...log.grains,...log.hops,...log.yeast,...log.other];
+    if (!allIngs.length) return '';
+    const rows = allIngs.filter(i=>i.rmId).map(i=>{
+      const rm = state.rawMaterials.find(r=>r.id==i.rmId);
+      if (!rm) return '';
+      const ok = rm.stock >= (i.qty||0);
+      return `<div class="stock-check-row">
+        <span>${rm.name}</span>
+        <span>Need <strong>${i.qty||0} ${i.unit||rm.unit}</strong></span>
+        <span style="color:${ok?'var(--green)':'var(--red)'};">Have ${rm.stock} ${rm.unit} ${ok?'✓':'⚠️ short'}</span>
+      </div>`;
+    }).join('');
+    return rows ? `<div class="brew-section" style="grid-column:1/-1;">
+      <div class="brew-section-title">Stock Availability Check</div>${rows}</div>` : '';
+  }
+
+  return `
+    <!-- Back button -->
+    <div style="margin-bottom:20px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
+      <button class="btn btn-ghost btn-sm" onclick="closeBrewLog()">← All Brews</button>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        ${editable?`<button class="btn btn-ghost btn-sm" onclick="deleteBrewLog(${id})">🗑 Delete</button>`:''}
+        ${log.status==='Draft'?`<button class="btn btn-primary" onclick="startBrew(${id})">▶ Start Brew</button>`:''}
+        ${log.status==='In Progress' && !log.inventoryDeducted?
+          `<button class="btn btn-green" onclick="completeBrew(${id})">✓ Mark Complete & Deduct Stock</button>`:''}
+        ${log.status==='In Progress' && log.inventoryDeducted?
+          `<button class="btn btn-green" onclick="completeBrewNoDeduct(${id})">✓ Mark Complete</button>`:''}
+      </div>
+    </div>
+
+    <!-- Status bar -->
+    <div class="brew-status-bar">
+      ${steps.map((s,i)=>`<div class="brew-status-step ${i<stepIdx?'done':i===stepIdx?'current':''}">${i<stepIdx?'✓ ':''} ${s}</div>`).join('')}
+    </div>
+
+    <!-- Header card -->
+    <div class="brew-section" style="margin-bottom:20px;">
+      <div class="brew-section-title">Brew Details</div>
+      <div class="form-row form-row-3" style="margin-bottom:12px;">
+        <div class="form-group">
+          <label class="lbl">Brew Date</label>
+          <input class="inp" type="date" value="${log.date}" ${!editable?'disabled':''}
+            onchange="updateLog(${id},'date',this.value)">
+        </div>
+        <div class="form-group">
+          <label class="lbl">Beer</label>
+          <select class="inp" ${!editable?'disabled':''} onchange="updateLog(${id},'beer',this.value)">
+            ${BEERS.map(b=>`<option value="${b.code}" ${log.beer===b.code?'selected':''}>${b.name}</option>`).join('')}
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="lbl">Target Volume (L)</label>
+          <input class="inp" type="number" value="${log.targetVol}" ${!editable?'disabled':''}
+            onchange="updateLog(${id},'targetVol',+this.value)">
+        </div>
+      </div>
+      <div class="form-row form-row-3">
+        <div class="form-group">
+          <label class="lbl">Brewer</label>
+          <input class="inp" value="${log.brewer||''}" placeholder="Name" ${!editable?'disabled':''}
+            onchange="updateLog(${id},'brewer',this.value)">
+        </div>
+        <div class="form-group">
+          <label class="lbl">Target Tank</label>
+          <select class="inp" ${!editable?'disabled':''} onchange="updateLog(${id},'tank',this.value)">
+            <option value="">— select —</option>
+            ${state.tanks.filter(t=>t.stage==='Empty'||t.id===log.tank).map(t=>`<option value="${t.id}" ${log.tank===t.id?'selected':''}>${t.name}</option>`).join('')}
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="lbl">Est. OG / FG</label>
+          <div style="display:flex;gap:6px;">
+            <input class="inp" value="${log.ogTarget||''}" placeholder="1.060" ${!editable?'disabled':''}
+              onchange="updateLog(${id},'ogTarget',this.value)" style="width:50%;">
+            <input class="inp" value="${log.fgTarget||''}" placeholder="1.012" ${!editable?'disabled':''}
+              onchange="updateLog(${id},'fgTarget',this.value)" style="width:50%;">
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Recipe grid -->
+    <div class="brew-sheet">
+
+      <!-- Grain Bill -->
+      <div class="brew-section">
+        <div class="brew-section-title">🌾 Grain Bill</div>
+        ${ingRows('grains', log.grains, ['Malt'])}
+      </div>
+
+      <!-- Hops -->
+      <div class="brew-section">
+        <div class="brew-section-title">🌿 Hops</div>
+        ${ingRows('hops', log.hops, ['Hops'])}
+      </div>
+
+      <!-- Yeast -->
+      <div class="brew-section">
+        <div class="brew-section-title">🧫 Yeast</div>
+        ${ingRows('yeast', log.yeast, ['Yeast'])}
+      </div>
+
+      <!-- Other / Adjuncts -->
+      <div class="brew-section">
+        <div class="brew-section-title">⚗️ Other (Water Chem, Adjuncts, CO2)</div>
+        ${ingRows('other', log.other, ['Water Chem','Adjuncts','Gases','Cleaning'])}
+      </div>
+
+      <!-- Process parameters -->
+      <div class="brew-section">
+        <div class="brew-section-title">⚙️ Process Parameters</div>
+        <div class="form-row form-row-2" style="margin-bottom:12px;">
+          <div class="form-group">
+            <label class="lbl">Mash Temp (°C)</label>
+            <input class="inp" type="number" step="0.5" value="${log.mashTemp||66}" ${!editable?'disabled':''}
+              onchange="updateLog(${id},'mashTemp',+this.value)">
+          </div>
+          <div class="form-group">
+            <label class="lbl">Mash Time (min)</label>
+            <input class="inp" type="number" value="${log.mashTime||60}" ${!editable?'disabled':''}
+              onchange="updateLog(${id},'mashTime',+this.value)">
+          </div>
+        </div>
+        <div class="form-row form-row-2">
+          <div class="form-group">
+            <label class="lbl">Boil Time (min)</label>
+            <input class="inp" type="number" value="${log.boilTime||60}" ${!editable?'disabled':''}
+              onchange="updateLog(${id},'boilTime',+this.value)">
+          </div>
+          <div class="form-group">
+            <label class="lbl">Estimated Yield (L)</label>
+            <input class="inp" type="number" value="${log.yieldEst||''}" placeholder="e.g. 940" ${!editable?'disabled':''}
+              onchange="updateLog(${id},'yieldEst',+this.value)">
+          </div>
+        </div>
+      </div>
+
+      <!-- Notes -->
+      <div class="brew-section">
+        <div class="brew-section-title">📝 Brew Notes</div>
+        <textarea class="inp" rows="6" placeholder="Observations, issues, adjustments during brew day…" ${!editable?'disabled':''}
+          onchange="updateLog(${id},'notes',this.value)">${log.notes||''}</textarea>
+      </div>
+
+      <!-- Stock check -->
+      ${stockCheck()}
+
+    </div>
+
+    ${isCompleted?`
+    <div style="margin-top:20px;background:#DCFCE7;border:1px solid #86EFAC;border-radius:10px;padding:16px 20px;font-size:14px;color:#15803D;">
+      ✅ <strong>Brew completed.</strong>${log.inventoryDeducted?' Raw material stock was deducted when this brew was marked complete.':' Stock was not automatically deducted.'}
+    </div>`:''}
+  `;
+}
+
+// ── Brew Log mutations ────────────────────────────────────────────────────────
+function updateLog(id, field, val) {
+  const i = state.brewLogs.findIndex(b=>b.id===id);
+  if (i<0) return;
+  state.brewLogs[i][field] = val;
+  saveState();
+}
+
+function addIng(section, hintCat) {
+  const id = window._openBrewId;
+  const i = state.brewLogs.findIndex(b=>b.id===id);
+  if (i<0) return;
+  // pre-select first matching RM
+  const rm = hintCat ? state.rawMaterials.find(r=>r.category===hintCat) : state.rawMaterials[0];
+  state.brewLogs[i][section].push({ rmId: rm?rm.id:'', name: rm?rm.name:'', qty: 0, unit: rm?rm.unit:'' });
+  saveState(); renderContent();
+}
+
+function removeIng(section, idx) {
+  const id = window._openBrewId;
+  const i = state.brewLogs.findIndex(b=>b.id===id);
+  if (i<0) return;
+  state.brewLogs[i][section].splice(idx, 1);
+  saveState(); renderContent();
+}
+
+function updateIng(section, idx, field, val) {
+  const id = window._openBrewId;
+  const i = state.brewLogs.findIndex(b=>b.id===id);
+  if (i<0) return;
+  state.brewLogs[i][section][idx][field] = field==='rmId' ? +val : val;
+  // also update name from rmId
+  if (field==='rmId') {
+    const rm = state.rawMaterials.find(r=>r.id==val);
+    if (rm) { state.brewLogs[i][section][idx].name=rm.name; state.brewLogs[i][section][idx].unit=rm.unit; }
+  }
+  saveState();
+}
+
+function updateIngUnit(section, idx, selectEl) {
+  // update unit from the selected RM's data-unit attribute
+  const opt = selectEl.options[selectEl.selectedIndex];
+  const unit = opt ? opt.getAttribute('data-unit') : '';
+  if (unit) {
+    const id = window._openBrewId;
+    const i = state.brewLogs.findIndex(b=>b.id===id);
+    if (i>=0) state.brewLogs[i][section][idx].unit = unit;
+  }
+}
+
+function startBrew(id) {
+  const i = state.brewLogs.findIndex(b=>b.id===id);
+  state.brewLogs[i].status = 'In Progress';
+  saveState(); renderNav(); renderContent();
+  toast('Brew started!');
+}
+
+function completeBrew(id) {
+  const log = state.brewLogs.find(b=>b.id===id);
+  if (!log) return;
+
+  // Build deduction summary
+  const allIngs = [...log.grains,...log.hops,...log.yeast,...log.other].filter(i=>i.rmId&&i.qty>0);
+  const issues = [];
+  allIngs.forEach(ing=>{
+    const rm = state.rawMaterials.find(r=>r.id==ing.rmId);
+    if (rm && rm.stock < ing.qty) issues.push(`${rm.name}: need ${ing.qty} ${ing.unit}, only ${rm.stock} ${rm.unit}`);
+  });
+
+  let msg = `Mark "${beerName(log.beer)}" brew as Complete and deduct ${allIngs.length} ingredient(s) from stock?`;
+  if (issues.length) msg += `\n\n⚠️ Insufficient stock for:\n${issues.join('\n')}\n\nDeduct anyway?`;
+
+  if (!confirm(msg)) return;
+
+  // Deduct
+  allIngs.forEach(ing=>{
+    const i = state.rawMaterials.findIndex(r=>r.id==ing.rmId);
+    if (i>=0) state.rawMaterials[i].stock = Math.max(0, Math.round((state.rawMaterials[i].stock - ing.qty)*1000)/1000);
+  });
+
+  const li = state.brewLogs.findIndex(b=>b.id===id);
+  state.brewLogs[li].status = 'Completed';
+  state.brewLogs[li].inventoryDeducted = true;
+  saveState(); renderNav(); renderContent();
+  toast(`Brew completed. ${allIngs.length} item(s) deducted from stock.`);
+}
+
+function completeBrewNoDeduct(id) {
+  if (!confirm('Mark this brew as Complete without deducting stock again?')) return;
+  const i = state.brewLogs.findIndex(b=>b.id===id);
+  state.brewLogs[i].status = 'Completed';
+  saveState(); renderNav(); renderContent();
+  toast('Brew marked complete.');
+}
+
+function deleteBrewLog(id) {
+  if (!confirm('Delete this brew log?')) return;
+  state.brewLogs = state.brewLogs.filter(b=>b.id!==id);
+  window._openBrewId = null;
+  saveState(); renderNav(); renderContent();
+  toast('Brew log deleted.');
+}
+
+// ── Tanks ─────────────────────────────────────────────────────────────────────
+function renderTanks() {
+  const stages = ['All','Fermenting','Conditioning','Ready','Empty'];
+  const filter = window._tankFilter || 'All';
+  const tanks = filter==='All' ? state.tanks : state.tanks.filter(t=>t.stage===filter);
+  return `
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:20px;flex-wrap:wrap;">
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        ${stages.map(s=>`<button class="btn btn-sm ${filter===s?'btn-primary':'btn-ghost'}" onclick="setTankFilter('${s}')">${s}</button>`).join('')}
+      </div>
+      <button class="btn btn-primary" onclick="openAddTank()">+ Add Tank</button>
+    </div>
+    <div class="tank-grid">
+      ${tanks.map(t=>{
+        const ds=daysSince(t.since), pct=t.cap?Math.round(t.vol/t.cap*100):0;
+        const sc={ Fermenting:'#2563EB',Conditioning:'#7C3AED',Ready:'#16A34A',Empty:'#9CA3AF',Kegging:'#D4821A' }[t.stage]||'#ccc';
+        return `
+        <div class="tank-card ${t.stage!=='Empty'?'occupied':''}">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+            <div class="tank-name">${t.name}</div>
+            <button class="btn btn-sm btn-ghost" onclick="editTank('${t.id}')" style="padding:4px 8px;">✏️</button>
+          </div>
+          ${t.beer?`
+            <div style="display:flex;align-items:center;gap:7px;margin-top:8px;">
+              <div class="beer-dot" style="background:${beerColor(t.beer)};width:12px;height:12px;"></div>
+              <div class="tank-beer">${beerName(t.beer)}</div>
+            </div>
+            <div class="tank-vol">${t.vol}L / ${t.cap}L</div>
+            <div class="fill-bar-wrap"><div class="fill-bar" style="width:${pct}%;background:${beerColor(t.beer)};"></div></div>
+            <div style="margin-top:10px;display:flex;align-items:center;gap:6px;">
+              <div class="tank-stage-dot" style="background:${sc}"></div>
+              <span style="font-size:12px;font-weight:600;color:${sc};">${t.stage}</span>
+            </div>
+            ${t.since?`<div class="tank-days">Day ${ds} · since ${fmtDate(t.since)}</div>`:''}
+            ${t.temp!=null?`<div class="tank-days">🌡️ ${t.temp}°C${t.gravity?` · SG ${t.gravity}`:''}</div>`:''}
+          `:`
+            <div class="tank-empty-label" style="margin-top:8px;">Empty</div>
+            <div style="font-size:12px;color:var(--muted);margin-top:4px;">${t.cap}L capacity</div>
+            <div style="font-size:11px;color:var(--muted);margin-top:6px;">${t.type}</div>
+          `}
+        </div>`;}).join('')}
+    </div>
+    <div id="tank-modal" class="modal-overlay" style="display:none;" onclick="if(event.target===this)closeTankModal()">
+      <div class="modal-box">
+        <div class="modal-title" id="tank-modal-title">Add Tank</div>
+        <input type="hidden" id="tm-id">
+        <div class="form-group"><label class="lbl">Tank Name</label><input class="inp" id="tm-name" placeholder="e.g. FV 5"></div>
+        <div class="form-row form-row-2">
+          <div class="form-group"><label class="lbl">Type</label>
+            <select class="inp" id="tm-type"><option>Fermenter</option><option>Bright Beer</option><option>Conditioning</option></select>
+          </div>
+          <div class="form-group"><label class="lbl">Capacity (L)</label><input class="inp" id="tm-cap" type="number"></div>
+        </div>
+        <div class="form-row form-row-2">
+          <div class="form-group"><label class="lbl">Beer</label>
+            <select class="inp" id="tm-beer"><option value="">— Empty —</option>
+            ${BEERS.map(b=>`<option value="${b.code}">${b.name}</option>`).join('')}</select>
+          </div>
+          <div class="form-group"><label class="lbl">Volume (L)</label><input class="inp" id="tm-vol" type="number"></div>
+        </div>
+        <div class="form-row form-row-2">
+          <div class="form-group"><label class="lbl">Stage</label>
+            <select class="inp" id="tm-stage"><option>Empty</option><option>Fermenting</option><option>Conditioning</option><option>Ready</option><option>Kegging</option></select>
+          </div>
+          <div class="form-group"><label class="lbl">Start Date</label><input class="inp" id="tm-since" type="date"></div>
+        </div>
+        <div class="form-row form-row-2">
+          <div class="form-group"><label class="lbl">Temp (°C)</label><input class="inp" id="tm-temp" type="number" step="0.1"></div>
+          <div class="form-group"><label class="lbl">Gravity (SG)</label><input class="inp" id="tm-gravity" type="number" step="0.001" placeholder="1.010"></div>
+        </div>
+        <div class="modal-actions">
+          <button class="btn btn-ghost" onclick="closeTankModal()">Cancel</button>
+          <button class="btn btn-danger btn-sm" id="tm-delete" onclick="deleteTank()" style="display:none;">Delete</button>
+          <button class="btn btn-primary" onclick="saveTank()">Save</button>
+        </div>
+      </div>
+    </div>`;
+}
+function setTankFilter(f){window._tankFilter=f;renderContent();}
+function openAddTank(){
+  ['tm-id','tm-name','tm-vol','tm-since','tm-temp','tm-gravity'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('tm-cap').value='1000';
+  document.getElementById('tank-modal-title').textContent='Add Tank';
+  document.getElementById('tm-delete').style.display='none';
+  document.getElementById('tm-stage').value='Empty';
+  document.getElementById('tm-beer').value='';
+  document.getElementById('tank-modal').style.display='flex';
+}
+function editTank(id){
+  const t=state.tanks.find(x=>x.id===id);if(!t)return;
+  document.getElementById('tank-modal-title').textContent='Edit Tank';
+  document.getElementById('tm-id').value=t.id;
+  document.getElementById('tm-name').value=t.name;
+  document.getElementById('tm-cap').value=t.cap;
+  document.getElementById('tm-beer').value=t.beer||'';
+  document.getElementById('tm-vol').value=t.vol;
+  document.getElementById('tm-stage').value=t.stage;
+  document.getElementById('tm-since').value=t.since||'';
+  document.getElementById('tm-temp').value=t.temp!=null?t.temp:'';
+  document.getElementById('tm-gravity').value=t.gravity!=null?t.gravity:'';
+  document.getElementById('tm-type').value=t.type||'Fermenter';
+  document.getElementById('tm-delete').style.display='inline-flex';
+  document.getElementById('tank-modal').style.display='flex';
+}
+function closeTankModal(){document.getElementById('tank-modal').style.display='none';}
+function saveTank(){
+  const id=document.getElementById('tm-id').value;
+  const obj={name:document.getElementById('tm-name').value.trim(),type:document.getElementById('tm-type').value,cap:+document.getElementById('tm-cap').value||1000,beer:document.getElementById('tm-beer').value||null,vol:+document.getElementById('tm-vol').value||0,stage:document.getElementById('tm-stage').value,since:document.getElementById('tm-since').value||null,temp:document.getElementById('tm-temp').value!==''?+document.getElementById('tm-temp').value:null,gravity:document.getElementById('tm-gravity').value!==''?+document.getElementById('tm-gravity').value:null};
+  if(!obj.name){toast('Tank name required',false);return;}
+  if(id){const i=state.tanks.findIndex(x=>x.id===id);state.tanks[i]={...state.tanks[i],...obj};}
+  else{obj.id='T'+state.nextTankId++;state.tanks.push(obj);}
+  saveState();closeTankModal();renderContent();toast('Tank saved');
+}
+function deleteTank(){
+  const id=document.getElementById('tm-id').value;
+  if(!confirm('Delete this tank?'))return;
+  state.tanks=state.tanks.filter(x=>x.id!==id);
+  saveState();closeTankModal();renderContent();toast('Deleted');
+}
+
+// ── Raw Materials ─────────────────────────────────────────────────────────────
+function renderRaw() {
+  const cats=['All',...new Set(state.rawMaterials.map(r=>r.category))];
+  const filter=window._rmFilter||'All';
+  const items=filter==='All'?state.rawMaterials:state.rawMaterials.filter(r=>r.category===filter);
+  const low=state.rawMaterials.filter(r=>r.stock<=r.reorder);
+  return `
+    ${low.length?`<div style="background:#FEF3C7;border:1px solid #F59E0B;border-radius:10px;padding:12px 16px;margin-bottom:18px;font-size:13px;color:#92400E;">
+      ⚠️ <strong>${low.length} item${low.length>1?'s':''}</strong> at or below reorder level: ${low.map(r=>r.name).join(', ')}</div>`:''}
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:18px;flex-wrap:wrap;">
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">${cats.map(c=>`<button class="btn btn-sm ${filter===c?'btn-primary':'btn-ghost'}" onclick="setRMFilter('${c}')">${c}</button>`).join('')}</div>
+      <button class="btn btn-primary" onclick="openAddRM()">+ Add Item</button>
+    </div>
+    <div class="card" style="padding:0;overflow:hidden;"><div class="tbl-wrap"><table class="tbl">
+      <thead><tr><th>Item</th><th>Category</th><th>Stock</th><th>Reorder At</th><th>Status</th><th style="text-align:right;">Actions</th></tr></thead>
+      <tbody>${items.map(r=>{const {pct,low,critical,color}=rmStatus(r);return `<tr>
+        <td><strong>${r.name}</strong></td>
+        <td><span class="badge badge-gray">${r.category}</span></td>
+        <td><div>${r.stock} ${r.unit}</div><div class="rm-bar-wrap" style="margin-top:5px;width:100px;"><div class="rm-bar" style="width:${pct}%;background:${color};"></div></div></td>
+        <td style="color:var(--muted);">${r.reorder} ${r.unit}</td>
+        <td>${critical?'<span class="badge badge-red">Critical</span>':low?'<span class="badge badge-orange">Low</span>':'<span class="badge badge-green">OK</span>'}</td>
+        <td style="text-align:right;white-space:nowrap;">
+          <button class="btn btn-sm btn-ghost" onclick="openEditRM(${r.id})">✏️ Edit</button>
+          <button class="btn btn-sm btn-ghost" onclick="openAdjRM(${r.id})" style="margin-left:6px;">⚖️ Adjust</button>
+        </td></tr>`;}).join('')}</tbody>
+    </table></div></div>
+
+    <div id="rm-modal" class="modal-overlay" style="display:none;" onclick="if(event.target===this)closeRMModal()">
+      <div class="modal-box">
+        <div class="modal-title" id="rm-modal-title">Add Raw Material</div>
+        <input type="hidden" id="rmm-id">
+        <div class="form-group"><label class="lbl">Item Name</label><input class="inp" id="rmm-name"></div>
+        <div class="form-row form-row-3">
+          <div class="form-group"><label class="lbl">Category</label>
+            <select class="inp" id="rmm-cat"><option>Malt</option><option>Hops</option><option>Yeast</option><option>Water Chem</option><option>Adjuncts</option><option>Gases</option><option>Cleaning</option><option>Other</option></select>
+          </div>
+          <div class="form-group"><label class="lbl">Unit</label><input class="inp" id="rmm-unit" placeholder="kg/L/pkt"></div>
+          <div class="form-group"><label class="lbl">Reorder At</label><input class="inp" id="rmm-reorder" type="number"></div>
+        </div>
+        <div class="form-group"><label class="lbl">Current Stock</label><input class="inp" id="rmm-stock" type="number" step="0.1"></div>
+        <div class="modal-actions">
+          <button class="btn btn-ghost" onclick="closeRMModal()">Cancel</button>
+          <button class="btn btn-danger btn-sm" id="rmm-delete" onclick="deleteRM()" style="display:none;">Delete</button>
+          <button class="btn btn-primary" onclick="saveRM()">Save</button>
+        </div>
+      </div>
+    </div>
+    <div id="adj-modal" class="modal-overlay" style="display:none;" onclick="if(event.target===this)closeAdjModal()">
+      <div class="modal-box" style="max-width:380px;">
+        <div class="modal-title">Adjust Stock</div>
+        <input type="hidden" id="adj-id">
+        <div id="adj-info" style="font-size:15px;margin-bottom:16px;"></div>
+        <div class="form-row form-row-2">
+          <div class="form-group"><label class="lbl">Type</label>
+            <select class="inp" id="adj-type"><option value="add">Received (+)</option><option value="sub">Used / Removed (−)</option><option value="set">Set Exact</option></select>
+          </div>
+          <div class="form-group"><label class="lbl">Amount</label><input class="inp" id="adj-qty" type="number" step="0.1"></div>
+        </div>
+        <div class="modal-actions">
+          <button class="btn btn-ghost" onclick="closeAdjModal()">Cancel</button>
+          <button class="btn btn-primary" onclick="applyAdj()">Apply</button>
+        </div>
+      </div>
+    </div>`;
+}
+function setRMFilter(f){window._rmFilter=f;renderContent();}
+function openAddRM(){
+  ['rmm-id','rmm-name','rmm-unit','rmm-stock','rmm-reorder'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('rm-modal-title').textContent='Add Raw Material';
+  document.getElementById('rmm-delete').style.display='none';
+  document.getElementById('rm-modal').style.display='flex';
+}
+function openEditRM(id){
+  const r=state.rawMaterials.find(x=>x.id===id);if(!r)return;
+  document.getElementById('rm-modal-title').textContent='Edit Item';
+  document.getElementById('rmm-id').value=r.id;
+  document.getElementById('rmm-name').value=r.name;
+  document.getElementById('rmm-cat').value=r.category;
+  document.getElementById('rmm-unit').value=r.unit;
+  document.getElementById('rmm-stock').value=r.stock;
+  document.getElementById('rmm-reorder').value=r.reorder;
+  document.getElementById('rmm-delete').style.display='inline-flex';
+  document.getElementById('rm-modal').style.display='flex';
+}
+function closeRMModal(){document.getElementById('rm-modal').style.display='none';}
+function saveRM(){
+  const id=+document.getElementById('rmm-id').value;
+  const obj={name:document.getElementById('rmm-name').value.trim(),category:document.getElementById('rmm-cat').value,unit:document.getElementById('rmm-unit').value.trim(),stock:+document.getElementById('rmm-stock').value,reorder:+document.getElementById('rmm-reorder').value};
+  if(!obj.name){toast('Name required',false);return;}
+  if(id){const i=state.rawMaterials.findIndex(x=>x.id===id);state.rawMaterials[i]={...state.rawMaterials[i],...obj};}
+  else{obj.id=state.nextRMId++;state.rawMaterials.push(obj);}
+  saveState();closeRMModal();renderContent();toast('Saved');
+}
+function deleteRM(){
+  const id=+document.getElementById('rmm-id').value;
+  if(!confirm('Delete this item?'))return;
+  state.rawMaterials=state.rawMaterials.filter(x=>x.id!==id);
+  saveState();closeRMModal();renderContent();toast('Deleted');
+}
+function openAdjRM(id){
+  const r=state.rawMaterials.find(x=>x.id===id);if(!r)return;
+  document.getElementById('adj-id').value=r.id;
+  document.getElementById('adj-info').innerHTML=`<strong>${r.name}</strong> — Current: <strong>${r.stock} ${r.unit}</strong>`;
+  document.getElementById('adj-qty').value='';
+  document.getElementById('adj-type').value='add';
+  document.getElementById('adj-modal').style.display='flex';
+}
+function closeAdjModal(){document.getElementById('adj-modal').style.display='none';}
+function applyAdj(){
+  const id=+document.getElementById('adj-id').value;
+  const qty=+document.getElementById('adj-qty').value;
+  const type=document.getElementById('adj-type').value;
+  const i=state.rawMaterials.findIndex(x=>x.id===id);
+  if(type==='add') state.rawMaterials[i].stock=Math.round((state.rawMaterials[i].stock+qty)*1000)/1000;
+  else if(type==='sub') state.rawMaterials[i].stock=Math.max(0,Math.round((state.rawMaterials[i].stock-qty)*1000)/1000);
+  else state.rawMaterials[i].stock=qty;
+  saveState();closeAdjModal();renderContent();toast('Stock updated');
+}
+
+// ── Beer Inventory ────────────────────────────────────────────────────────────
+function renderBeerInv() {
+  const total=state.beerInventory.reduce((s,b)=>s+b.litres,0);
+  const totalKegs=state.beerInventory.reduce((s,b)=>s+b.kegs20+b.kegs50,0);
+  return `
+    <div class="grid4" style="margin-bottom:20px;">
+      <div class="stat-card"><div class="stat-num">${total}L</div><div class="stat-lbl">Total Beer in Cold Room</div></div>
+      <div class="stat-card"><div class="stat-num">${totalKegs}</div><div class="stat-lbl">Total Kegs</div></div>
+      <div class="stat-card"><div class="stat-num">${state.beerInventory.reduce((s,b)=>s+b.kegs20,0)}</div><div class="stat-lbl">20L Kegs</div></div>
+      <div class="stat-card"><div class="stat-num">${state.beerInventory.reduce((s,b)=>s+b.kegs50,0)}</div><div class="stat-lbl">50L Kegs</div></div>
+    </div>
+    <div style="display:flex;justify-content:flex-end;margin-bottom:14px;">
+      <button class="btn btn-primary" onclick="openEditInv()">✏️ Update Stock</button>
+    </div>
+    <div class="card" style="padding:0;overflow:hidden;"><div class="tbl-wrap"><table class="tbl">
+      <thead><tr><th>Beer</th><th>Style</th><th>20L Kegs</th><th>50L Kegs</th><th>Total Litres</th><th>Stock Level</th></tr></thead>
+      <tbody>${state.beerInventory.map(b=>{
+        const bObj=beer(b.beer);
+        const level=b.litres===0?'Out of Stock':b.litres<80?'Low':'OK';
+        const lc=b.litres===0?'badge-red':b.litres<80?'badge-orange':'badge-green';
+        return `<tr>
+          <td><div style="display:flex;align-items:center;gap:8px;"><div class="beer-dot" style="background:${beerColor(b.beer)}"></div><strong>${beerName(b.beer)}</strong></div></td>
+          <td style="color:var(--muted);">${bObj?.style||'—'}</td>
+          <td>${b.kegs20}</td><td>${b.kegs50}</td>
+          <td><strong>${b.litres}L</strong></td>
+          <td><span class="badge ${lc}">${level}</span></td>
+        </tr>`;}).join('')}</tbody>
+    </table></div></div>
+
+    <div id="inv-modal" class="modal-overlay" style="display:none;" onclick="if(event.target===this)closeInvModal()">
+      <div class="modal-box">
+        <div class="modal-title">Update Beer Inventory</div>
+        <p style="font-size:13px;color:var(--muted);margin-bottom:20px;">Enter current keg counts in cold room for each beer.</p>
+        ${state.beerInventory.map(b=>`
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
+            <div class="beer-dot" style="background:${beerColor(b.beer)};width:12px;height:12px;flex-shrink:0;"></div>
+            <div style="flex:1;font-size:14px;font-weight:600;">${beerName(b.beer)}</div>
+            <div style="display:flex;align-items:center;gap:8px;">
+              <input class="inp" type="number" id="inv-20-${b.beer}" value="${b.kegs20}" style="width:70px;">
+              <span style="font-size:12px;color:var(--muted);">×20L</span>
+              <input class="inp" type="number" id="inv-50-${b.beer}" value="${b.kegs50}" style="width:70px;">
+              <span style="font-size:12px;color:var(--muted);">×50L</span>
+            </div>
+          </div>`).join('')}
+        <div class="modal-actions">
+          <button class="btn btn-ghost" onclick="closeInvModal()">Cancel</button>
+          <button class="btn btn-primary" onclick="saveInv()">Save</button>
+        </div>
+      </div>
+    </div>`;
+}
+function openEditInv(){document.getElementById('inv-modal').style.display='flex';}
+function closeInvModal(){document.getElementById('inv-modal').style.display='none';}
+function saveInv(){
+  state.beerInventory.forEach(b=>{
+    const k20=+document.getElementById(`inv-20-${b.beer}`).value||0;
+    const k50=+document.getElementById(`inv-50-${b.beer}`).value||0;
+    b.kegs20=k20;b.kegs50=k50;b.litres=k20*20+k50*50;
+  });
+  saveState();closeInvModal();renderContent();toast('Inventory updated');
+}
+
+// ── Schedule ──────────────────────────────────────────────────────────────────
+function renderSchedule() {
+  const filter=window._schedFilter||'All';
+  const items=filter==='All'?state.schedule:state.schedule.filter(s=>s.status===filter);
+  const sorted=[...items].sort((a,b)=>a.date.localeCompare(b.date));
+  return `
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:20px;flex-wrap:wrap;">
+      <div style="display:flex;gap:8px;">${['All','Planned','Completed','Cancelled'].map(s=>`<button class="btn btn-sm ${filter===s?'btn-primary':'btn-ghost'}" onclick="setSchedFilter('${s}')">${s}</button>`).join('')}</div>
+      <button class="btn btn-primary" onclick="openAddSched()">+ Schedule Brew</button>
+    </div>
+    ${sorted.length===0?'<div class="empty">No brews found.</div>':sorted.map(s=>{
+      const dt=new Date(s.date+'T00:00:00');
+      const day=dt.getDate(),mon=dt.toLocaleDateString('en-IN',{month:'short'});
+      const sc={Planned:'badge-blue',Completed:'badge-green',Cancelled:'badge-red','In Progress':'badge-orange'}[s.status]||'badge-gray';
+      return `<div class="sched-row">
+        <div class="sched-date"><div class="day">${day}</div><div class="mon">${mon}</div></div>
+        <div class="sched-body">
+          <div class="beer-dot" style="background:${beerColor(s.beer)}"></div>
+          <div style="flex:1;"><div class="beer-name">${beerName(s.beer)}</div><div class="sched-meta">${s.vol}L · ${s.notes||''}</div></div>
+          <span class="badge ${sc}">${s.status}</span>
+        </div>
+        <div class="sched-actions"><button class="btn btn-sm btn-ghost" onclick="editSched(${s.id})">✏️</button></div>
+      </div>`;}).join('')}
+
+    <div id="sched-modal" class="modal-overlay" style="display:none;" onclick="if(event.target===this)closeSchedModal()">
+      <div class="modal-box">
+        <div class="modal-title" id="sched-modal-title">Schedule Brew</div>
+        <input type="hidden" id="sm-id">
+        <div class="form-row form-row-2">
+          <div class="form-group"><label class="lbl">Brew Date</label><input class="inp" id="sm-date" type="date"></div>
+          <div class="form-group"><label class="lbl">Beer</label>
+            <select class="inp" id="sm-beer">${BEERS.map(b=>`<option value="${b.code}">${b.name}</option>`).join('')}</select>
+          </div>
+        </div>
+        <div class="form-row form-row-2">
+          <div class="form-group"><label class="lbl">Volume (L)</label><input class="inp" id="sm-vol" type="number" value="1000"></div>
+          <div class="form-group"><label class="lbl">Status</label>
+            <select class="inp" id="sm-status"><option>Planned</option><option>In Progress</option><option>Completed</option><option>Cancelled</option></select>
+          </div>
+        </div>
+        <div class="form-group"><label class="lbl">Notes</label><textarea class="inp" id="sm-notes" rows="3"></textarea></div>
+        <div class="modal-actions">
+          <button class="btn btn-ghost" onclick="closeSchedModal()">Cancel</button>
+          <button class="btn btn-danger btn-sm" id="sm-delete" onclick="deleteSched()" style="display:none;">Delete</button>
+          <button class="btn btn-primary" onclick="saveSched()">Save</button>
+        </div>
+      </div>
+    </div>`;
+}
+function setSchedFilter(f){window._schedFilter=f;renderContent();}
+function openAddSched(){
+  document.getElementById('sched-modal-title').textContent='Schedule Brew';
+  document.getElementById('sm-id').value='';
+  document.getElementById('sm-date').value='';
+  document.getElementById('sm-beer').value=BEERS[0].code;
+  document.getElementById('sm-vol').value='1000';
+  document.getElementById('sm-status').value='Planned';
+  document.getElementById('sm-notes').value='';
+  document.getElementById('sm-delete').style.display='none';
+  document.getElementById('sched-modal').style.display='flex';
+}
+function editSched(id){
+  const s=state.schedule.find(x=>x.id===id);if(!s)return;
+  document.getElementById('sched-modal-title').textContent='Edit Brew';
+  document.getElementById('sm-id').value=s.id;
+  document.getElementById('sm-date').value=s.date;
+  document.getElementById('sm-beer').value=s.beer;
+  document.getElementById('sm-vol').value=s.vol;
+  document.getElementById('sm-status').value=s.status;
+  document.getElementById('sm-notes').value=s.notes||'';
+  document.getElementById('sm-delete').style.display='inline-flex';
+  document.getElementById('sched-modal').style.display='flex';
+}
+function closeSchedModal(){document.getElementById('sched-modal').style.display='none';}
+function saveSched(){
+  const id=+document.getElementById('sm-id').value;
+  const obj={date:document.getElementById('sm-date').value,beer:document.getElementById('sm-beer').value,vol:+document.getElementById('sm-vol').value||1000,status:document.getElementById('sm-status').value,notes:document.getElementById('sm-notes').value.trim()};
+  if(!obj.date){toast('Date required',false);return;}
+  if(id){const i=state.schedule.findIndex(x=>x.id===id);state.schedule[i]={...state.schedule[i],...obj};}
+  else{obj.id=state.nextSchedId++;state.schedule.push(obj);}
+  saveState();closeSchedModal();renderContent();toast('Saved');
+}
+function deleteSched(){
+  const id=+document.getElementById('sm-id').value;
+  if(!confirm('Delete this brew?'))return;
+  state.schedule=state.schedule.filter(x=>x.id!==id);
+  saveState();closeSchedModal();renderContent();toast('Deleted');
+}
+
+// ── Password ──────────────────────────────────────────────────────────────────
+function checkBrewPw() {
+  const val = document.getElementById('brew-pw').value;
+  if (val === '1002') {
+    document.getElementById('login-screen').style.display = 'none';
+    document.getElementById('app').style.display = 'flex';
+    document.getElementById('brew-pw-err').textContent = '';
+  } else {
+    const err = document.getElementById('brew-pw-err');
+    err.textContent = 'Incorrect password';
+    document.getElementById('brew-pw').value = '';
+    document.getElementById('brew-pw').focus();
+    setTimeout(() => err.textContent = '', 2000);
+  }
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+(function init(){
+  document.getElementById('topbar-date').textContent=new Date().toLocaleDateString('en-IN',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
+  // Focus the password field on load
+  setTimeout(() => { const pw = document.getElementById('brew-pw'); if (pw) pw.focus(); }, 100);
+  renderNav(); renderContent();
+})();
+</script>
+</body>
+</html>
