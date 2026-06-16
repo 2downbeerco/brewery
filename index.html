@@ -236,7 +236,8 @@ async function sbFetch(method, path, body) {
     const err = await res.text();
     throw new Error(err);
   }
-  return method === 'DELETE' ? null : res.json();
+  const text = await res.text();
+  return text ? JSON.parse(text) : null;
 }
 
 // Keys we sync to Supabase
