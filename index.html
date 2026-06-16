@@ -203,7 +203,13 @@
   <div id="main">
     <div id="topbar">
       <div class="topbar-title" id="topbar-title">Dashboard</div>
+      <div style="display:flex;align-items:center;gap:14px;">
+      <div id="sync-status" style="font-size:11px;color:var(--muted);display:flex;align-items:center;gap:5px;">
+        <div id="sync-dot" style="width:7px;height:7px;border-radius:50%;background:var(--muted);"></div>
+        <span id="sync-label">Syncing...</span>
+      </div>
       <div class="topbar-date" id="topbar-date"></div>
+    </div>
     </div>
     <div id="content"></div>
   </div>
@@ -211,6 +217,101 @@
 </div>
 
 <script>
+// ── Supabase Config ───────────────────────────────────────────────────────────
+const SB_URL = 'https://wznilnuaatmlqgfankno.supabase.co';
+const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Ind6bmlsbnVhYXRtbHFnZmFua25vIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY4NjMzODUsImV4cCI6MjA5MjQzOTM4NX0.CP15u0zCIM6o27hvMvWAuSYFdzdFBefccNPPvFXwIwQ';
+
+async function sbFetch(method, path, body) {
+  const res = await fetch(SB_URL + path, {
+    method,
+    headers: {
+      'apikey': SB_KEY,
+      'Authorization': 'Bearer ' + SB_KEY,
+      'Content-Type': 'application/json',
+      'Prefer': method === 'POST' ? 'resolution=merge-duplicates' : ''
+    },
+    body: body ? JSON.stringify(body) : undefined
+  });
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(err);
+  }
+  return method === 'DELETE' ? null : res.json();
+}
+
+// Keys we sync to Supabase
+const SYNC_KEYS = ['tanks','rawMaterials','beerInventory','schedule','brewLogs',
+                   'purchaseOrders','stockTakes','beers','gravityLogs'];
+
+async function pushToSupabase() {
+  const rows = SYNC_KEYS.map(key => ({
+    key,
+    value: state[key],
+    updated_at: new Date().toISOString()
+  }));
+  try {
+    await sbFetch('POST', '/rest/v1/brew_state', rows);
+    setSyncStatus(true);
+  } catch(e) {
+    console.warn('Supabase push failed:', e.message);
+    setSyncStatus(false);
+  }
+}
+
+function setSyncStatus(ok) {
+  const dot = document.getElementById('sync-dot');
+  const lbl = document.getElementById('sync-label');
+  if (!dot) return;
+  dot.style.background = ok ? 'var(--green)' : 'var(--red)';
+  lbl.textContent = ok ? 'Synced' : 'Offline';
+}
+
+async function pullFromSupabase() {
+  try {
+    const rows = await sbFetch('GET', '/rest/v1/brew_state?select=key,value');
+    if (!rows || !rows.length) return false;
+    let changed = false;
+    rows.forEach(row => {
+      if (!SYNC_KEYS.includes(row.key)) return;
+      const fresh = JSON.stringify(row.value);
+      const current = JSON.stringify(state[row.key]);
+      if (fresh !== current) {
+        state[row.key] = row.value;
+        changed = true;
+      }
+    });
+    if (changed) {
+      // persist to localStorage too
+      SYNC_KEYS.forEach(k => localStorage.setItem('brew_' + k, JSON.stringify(state[k])));
+    }
+    return changed;
+  } catch(e) {
+    console.warn('Supabase pull failed:', e.message);
+    return false;
+  }
+}
+
+let _syncPollTimer = null;
+function startSyncPoll() {
+  if (_syncPollTimer) return;
+  _syncPollTimer = setInterval(async () => {
+    const changed = await pullFromSupabase();
+    if (changed) {
+      renderNav();
+      renderContent();
+      showSyncToast('🔄 Data updated from another device');
+    }
+  }, 30000); // every 30 seconds
+}
+
+function showSyncToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.style.background = '#2563EB';
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 3000);
+}
+
 // ── Seed Data ─────────────────────────────────────────────────────────────────
 // BEERS is now dynamic — reads from state.beers
 const BEERS_SEED = [
@@ -3082,9 +3183,13 @@ function saveBeer() {
 // ── Init ──────────────────────────────────────────────────────────────────────
 (function init(){
   document.getElementById('topbar-date').textContent=new Date().toLocaleDateString('en-IN',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
-  // Focus the password field on load
   setTimeout(() => { const pw = document.getElementById('brew-pw'); if (pw) pw.focus(); }, 100);
   renderNav(); renderContent();
+  // Pull latest data from Supabase on load, then start polling
+  pullFromSupabase().then(changed => {
+    if (changed) { renderNav(); renderContent(); }
+    startSyncPoll();
+  });
 })();
 </script>
 </body>
