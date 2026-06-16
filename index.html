@@ -490,8 +490,16 @@ function openBrewLog(id) {
   renderContent();
 }
 
+function saveBrewEdits(id) {
+  saveState();
+  window._brewEditMode = false;
+  renderContent();
+  toast('Brew log saved');
+}
+
 function closeBrewLog() {
   window._openBrewId = null;
+  window._brewEditMode = false;
   renderContent();
 }
 
@@ -502,7 +510,7 @@ function renderBrewDetail(id) {
   const steps = ['Draft','In Progress','Completed'];
   const stepIdx = steps.indexOf(log.status);
   const isCompleted = log.status==='Completed';
-  const editable = true;
+  const editable = !isCompleted || !!window._brewEditMode;
 
   // Build ingredient selectors
   const rmOptions = state.rawMaterials.map(r=>`<option value="${r.id}">${r.name} (${r.stock} ${r.unit} in stock)</option>`).join('');
@@ -557,6 +565,10 @@ function renderBrewDetail(id) {
       <button class="btn btn-ghost btn-sm" onclick="closeBrewLog()">← All Brews</button>
       <div style="display:flex;gap:8px;flex-wrap:wrap;">
         <button class="btn btn-ghost btn-sm" onclick="deleteBrewLog(${id})">🗑 Delete</button>
+        ${isCompleted ? `<button class="btn btn-ghost btn-sm" onclick="window._brewEditMode=!window._brewEditMode;renderContent()">
+          ${window._brewEditMode ? '✕ Cancel Edit' : '✏️ Edit'}
+        </button>` : ''}
+        ${isCompleted && window._brewEditMode ? `<button class="btn btn-primary" onclick="saveBrewEdits(${id})">💾 Save Changes</button>` : ''}
         ${log.status==='Draft'?`<button class="btn btn-primary" onclick="startBrew(${id})">▶ Start Brew</button>`:''}
         ${log.status==='In Progress' && !log.inventoryDeducted?
           `<button class="btn btn-green" onclick="completeBrew(${id})">✓ Mark Complete & Deduct Stock</button>`:''}
