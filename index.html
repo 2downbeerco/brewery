@@ -476,6 +476,15 @@ function newBrewLog() {
     ogTarget: '', fgTarget: '',
     // Ingredients: [{rmId, name, qty, unit}]
     grains: [], hops: [], yeast: [], other: [],
+    mash: {
+      cerealMash:   {enabled:false},
+      bGlucanRest:  {enabled:false},
+      proteinRest:  {enabled:false},
+      bAmylaseRest: {enabled:false},
+      sacchRest:    {enabled:true, temp:66, duration:60},
+      mashOut:      {enabled:true, temp:78, duration:10},
+    },
+    checks: {},
     status: 'Draft', inventoryDeducted: false,
   };
   state.brewLogs.push(log);
@@ -507,204 +516,321 @@ function renderBrewDetail(id) {
   const log = state.brewLogs.find(b=>b.id===id);
   if (!log) { window._openBrewId=null; return renderBrewList(); }
 
+  const isDraft      = log.status==='Draft';
+  const isInProgress = log.status==='In Progress';
+  const isCompleted  = log.status==='Completed';
+  const canEdit      = isDraft || isInProgress || !!window._brewEditMode;
   const steps = ['Draft','In Progress','Completed'];
   const stepIdx = steps.indexOf(log.status);
-  const isCompleted = log.status==='Completed';
-  const editable = !isCompleted || !!window._brewEditMode;
 
-  // Build ingredient selectors
-  const rmOptions = state.rawMaterials.map(r=>`<option value="${r.id}">${r.name} (${r.stock} ${r.unit} in stock)</option>`).join('');
-  const rmByCateg = cat => state.rawMaterials.filter(r=>r.category===cat);
+  // ── Ingredient row builder (inventory-linked, no price) ───────────────────
+  function ingRows(section, items, cats) {
+    const rmList = cats ? state.rawMaterials.filter(r=>cats.includes(r.category)) : state.rawMaterials;
+    const rmOpts = rmList.map(r=>`<option value="${r.id}">${r.name}</option>`).join('');
 
-  function ingRows(section, items, catFilter) {
-    const rmList = catFilter ? state.rawMaterials.filter(r=>catFilter.includes(r.category)) : state.rawMaterials;
-    const rmOpts = rmList.map(r=>`<option value="${r.id}" data-unit="${r.unit}">${r.name}</option>`).join('');
-    return `
-      <div class="ingredient-row-header">
-        <div class="ing-lbl">Ingredient</div>
-        <div class="ing-lbl" style="width:80px;">Qty</div>
-        <div class="ing-lbl" style="width:60px;">Unit</div>
-        <div></div>
-      </div>
-      ${items.map((ing,idx)=>`
-        <div class="ingredient-row">
-          <select class="inp inp-sm" ${!editable?'disabled':''} onchange="updateIng('${section}',${idx},'rmId',this.value);updateIngUnit('${section}',${idx},this)">
-            <option value="">— select —</option>
-            ${rmOpts.replace(`value="${ing.rmId}"`,`value="${ing.rmId}" selected`)}
-          </select>
-          <input class="inp inp-sm" type="number" step="0.01" value="${ing.qty||''}" style="width:80px;" ${!editable?'disabled':''}
-            onchange="updateIng('${section}',${idx},'qty',+this.value)" placeholder="0">
-          <input class="inp inp-sm" value="${ing.unit||''}" style="width:60px;" ${!editable?'disabled':''}
-            onchange="updateIng('${section}',${idx},'unit',this.value)" placeholder="kg">
-          ${editable?`<button class="del-btn" onclick="removeIng('${section}',${idx})">✕</button>`:'<div></div>'}
-        </div>`).join('')}
-      ${editable?`<button class="btn btn-ghost btn-sm" style="margin-top:6px;" onclick="addIng('${section}','${catFilter?catFilter[0]:''}')">+ Add</button>`:''}`;
+    if (!canEdit && items.length===0) return '<div style="color:var(--muted);font-size:13px;">None specified</div>';
+
+    return items.map((ing,idx)=>{
+      const rm = state.rawMaterials.find(r=>r.id==ing.rmId);
+      const isMalt = rm?.category==='Malt';
+      const isHops = rm?.category==='Hops';
+
+      if (!canEdit) {
+        // Read-only: show as clean rows
+        return `<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);">
+          <div style="flex:1;font-size:14px;font-weight:600;">${ing.name||'—'}</div>
+          <div style="font-size:13px;color:var(--muted);">${ing.qty||0} ${ing.unit||''}</div>
+          ${isMalt&&rm?.lastBatchNo?`<div style="font-size:11px;color:var(--muted);">Batch: ${rm.lastBatchNo}</div>`:''}
+          ${isMalt&&rm?.extractLdk!=null?`<div style="font-size:11px;color:var(--muted);">LDK: ${rm.extractLdk}</div>`:''}
+          ${isHops&&rm?.alphaAcid!=null?`<div style="font-size:11px;color:var(--muted);">AA: ${rm.alphaAcid}%</div>`:''}
+        </div>`;
+      }
+
+      return `
+        <div style="background:var(--bg);border-radius:8px;padding:10px;margin-bottom:8px;">
+          <div style="display:grid;grid-template-columns:1fr 80px 60px 24px;gap:6px;align-items:center;margin-bottom:${isMalt||isHops?'8px':'0'};">
+            <select class="inp inp-sm" onchange="updateIng('${section}',${idx},'rmId',this.value);updateIngUnit('${section}',${idx},this)">
+              <option value="">— select —</option>
+              ${rmOpts.replace(`value="${ing.rmId}"`,`value="${ing.rmId}" selected`)}
+            </select>
+            <input class="inp inp-sm" type="number" step="0.01" value="${ing.qty||''}" placeholder="qty"
+              onchange="updateIng('${section}',${idx},'qty',+this.value)">
+            <input class="inp inp-sm" value="${ing.unit||''}" placeholder="kg"
+              onchange="updateIng('${section}',${idx},'unit',this.value)">
+            <button class="del-btn" onclick="removeIng('${section}',${idx})">✕</button>
+          </div>
+          ${isMalt?`<div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <div style="font-size:11px;color:var(--muted);">Batch: <strong>${rm?.lastBatchNo||'—'}</strong></div>
+            <div style="font-size:11px;color:var(--muted);">Extract LDK: <strong>${rm?.extractLdk!=null?rm.extractLdk:'—'}</strong></div>
+          </div>`:''}
+          ${isHops?`<div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <div style="font-size:11px;color:var(--muted);">Batch: <strong>${rm?.lastBatchNo||'—'}</strong></div>
+            <div style="font-size:11px;color:var(--muted);">Alpha Acid: <strong>${rm?.alphaAcid!=null?rm.alphaAcid+'%':'—'}</strong></div>
+          </div>`:''}
+        </div>`;
+    }).join('') + (canEdit?`<button class="btn btn-ghost btn-sm" style="margin-top:4px;" onclick="addIng('${section}','${cats?cats[0]:''}')">+ Add</button>`:'');
   }
 
-  // Stock availability check
+  // ── Mash step row builder ─────────────────────────────────────────────────
+  function mashStep(key, label, hasExtras) {
+    const step = log.mash?.[key] || {};
+    const enabled = !!step.enabled;
+    const iP = canEdit; // shorthand
+
+    if (!iP) {
+      // read-only
+      if (!enabled) return `<div style="padding:8px 0;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;font-size:13px;">
+        <span style="color:var(--muted);">${label}</span><span class="badge badge-gray">Skip</span></div>`;
+      let detail = '';
+      if (step.temp)     detail += `${step.temp}°C`;
+      if (step.duration) detail += ` · ${step.duration} min`;
+      return `<div style="padding:8px 0;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;font-size:13px;">
+        <span style="font-weight:600;">${label}</span>
+        <div style="display:flex;gap:12px;align-items:center;">
+          <span style="color:var(--muted);">${detail}</span>
+          <span class="badge badge-green">✓</span>
+        </div></div>`;
+    }
+
+    // editable row
+    return `
+      <div style="background:var(--bg);border-radius:8px;padding:10px 12px;margin-bottom:8px;">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:${enabled?'10px':'0'};">
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:14px;font-weight:600;flex:1;">
+            <input type="checkbox" ${enabled?'checked':''} onchange="updateMashStep(${id},'${key}','enabled',this.checked)" style="width:16px;height:16px;accent-color:var(--accent);">
+            ${label}
+          </label>
+        </div>
+        ${enabled?`
+        <div style="display:grid;grid-template-columns:1fr 1fr ${hasExtras?'1fr 1fr':''};gap:8px;">
+          <div><label class="lbl" style="font-size:10px;">Temp (°C)</label>
+            <input class="inp inp-sm" type="number" step="0.5" value="${step.temp||''}" placeholder="°C"
+              onchange="updateMashStep(${id},'${key}','temp',+this.value)"></div>
+          <div><label class="lbl" style="font-size:10px;">Duration (min)</label>
+            <input class="inp inp-sm" type="number" value="${step.duration||''}" placeholder="min"
+              onchange="updateMashStep(${id},'${key}','duration',+this.value)"></div>
+          ${hasExtras===true?`
+          <div><label class="lbl" style="font-size:10px;">Malt Qty (kg)</label>
+            <input class="inp inp-sm" type="number" step="0.1" value="${step.maltQty||''}" placeholder="kg"
+              onchange="updateMashStep(${id},'${key}','maltQty',+this.value)"></div>
+          <div><label class="lbl" style="font-size:10px;">Adjunct Qty (kg)</label>
+            <input class="inp inp-sm" type="number" step="0.1" value="${step.adjunctQty||''}" placeholder="kg"
+              onchange="updateMashStep(${id},'${key}','adjunctQty',+this.value)"></div>`:''}
+        </div>`:''}
+      </div>`;
+  }
+
+  // ── Stock check ───────────────────────────────────────────────────────────
   function stockCheck() {
     const allIngs = [...log.grains,...log.hops,...log.yeast,...log.other];
     if (!allIngs.length) return '';
     const rows = allIngs.filter(i=>i.rmId).map(i=>{
       const rm = state.rawMaterials.find(r=>r.id==i.rmId);
       if (!rm) return '';
-      const ok = rm.stock >= (i.qty||0);
+      const avail = rm.category==='Malt'?(rm.breweryStock||0):rm.stock;
+      const ok = avail >= (i.qty||0);
       return `<div class="stock-check-row">
         <span>${rm.name}</span>
         <span>Need <strong>${i.qty||0} ${i.unit||rm.unit}</strong></span>
-        <span style="color:${ok?'var(--green)':'var(--red)'};">Have ${rm.stock} ${rm.unit} ${ok?'✓':'⚠️ short'}</span>
+        <span style="color:${ok?'var(--green)':'var(--red)'};">${rm.category==='Malt'?`Brewery: ${avail} ${rm.unit}`:`Have ${avail} ${rm.unit}`} ${ok?'✓':'⚠️ short'}</span>
       </div>`;
     }).join('');
     return rows ? `<div class="brew-section" style="grid-column:1/-1;">
       <div class="brew-section-title">Stock Availability Check</div>${rows}</div>` : '';
   }
 
+  // ── In Progress execution checklist ──────────────────────────────────────
+  function ipChecklist() {
+    const checks = log.checks || {};
+    const items = [
+      {k:'mill',       label:'Grain milled'},
+      {k:'mashIn',     label:'Mash in complete'},
+      {k:'lauter',     label:'Lautering complete'},
+      {k:'boil',       label:'Boil complete'},
+      {k:'chill',      label:'Wort chilled'},
+      {k:'transfer',   label:'Transferred to fermenter'},
+      {k:'yeastPitch', label:'Yeast pitched'},
+      {k:'og',         label:'OG measured'},
+    ];
+    return `<div class="brew-section" style="grid-column:1/-1;">
+      <div class="brew-section-title">Brew Day Checklist</div>
+      ${items.map(item=>`
+        <div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--border);">
+          <input type="checkbox" ${checks[item.k]?'checked':''} onchange="updateBrewCheck(${id},'${item.k}',this.checked)"
+            style="width:18px;height:18px;accent-color:var(--green);cursor:pointer;flex-shrink:0;">
+          <span style="font-size:14px;font-weight:500;${checks[item.k]?'text-decoration:line-through;color:var(--muted);':''}">${item.label}</span>
+          ${item.k==='og'?`<input class="inp inp-sm" style="width:90px;margin-left:auto;" value="${log.ogActual||''}" placeholder="e.g. 1.058"
+            onchange="updateLog(${id},'ogActual',this.value)">`:
+          item.k==='transfer'?`<select class="inp inp-sm" style="width:120px;margin-left:auto;" onchange="updateLog(${id},'tank',this.value)">
+            <option value="">Tank</option>
+            ${state.tanks.filter(t=>t.stage==='Empty'||t.id===log.tank).map(t=>`<option value="${t.id}" ${log.tank===t.id?'selected':''}>${t.name}</option>`).join('')}
+          </select>`:''}
+        </div>`).join('')}
+    </div>`;
+  }
+
   return `
-    <!-- Back button -->
     <div style="margin-bottom:20px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
       <button class="btn btn-ghost btn-sm" onclick="closeBrewLog()">← All Brews</button>
       <div style="display:flex;gap:8px;flex-wrap:wrap;">
         <button class="btn btn-ghost btn-sm" onclick="deleteBrewLog(${id})">🗑 Delete</button>
-        ${isCompleted ? `<button class="btn btn-ghost btn-sm" onclick="window._brewEditMode=!window._brewEditMode;renderContent()">
-          ${window._brewEditMode ? '✕ Cancel Edit' : '✏️ Edit'}
-        </button>` : ''}
-        ${isCompleted && window._brewEditMode ? `<button class="btn btn-primary" onclick="saveBrewEdits(${id})">💾 Save Changes</button>` : ''}
-        ${log.status==='Draft'?`<button class="btn btn-primary" onclick="startBrew(${id})">▶ Start Brew</button>`:''}
-        ${log.status==='In Progress' && !log.inventoryDeducted?
-          `<button class="btn btn-green" onclick="completeBrew(${id})">✓ Mark Complete & Deduct Stock</button>`:''}
-        ${log.status==='In Progress' && log.inventoryDeducted?
-          `<button class="btn btn-green" onclick="completeBrewNoDeduct(${id})">✓ Mark Complete</button>`:''}
+        ${isCompleted?`<button class="btn btn-ghost btn-sm" onclick="window._brewEditMode=!window._brewEditMode;renderContent()">
+          ${window._brewEditMode?'✕ Cancel Edit':'✏️ Edit'}</button>`:''}
+        ${isCompleted&&window._brewEditMode?`<button class="btn btn-primary" onclick="saveBrewEdits(${id})">💾 Save Changes</button>`:''}
+        ${isDraft?`<button class="btn btn-primary" onclick="startBrew(${id})">▶ Start Brew</button>`:''}
+        ${isInProgress&&!log.inventoryDeducted?`<button class="btn btn-green" onclick="completeBrew(${id})">✓ Complete & Deduct Stock</button>`:''}
+        ${isInProgress&&log.inventoryDeducted?`<button class="btn btn-green" onclick="completeBrewNoDeduct(${id})">✓ Mark Complete</button>`:''}
       </div>
     </div>
 
-    <!-- Status bar -->
     <div class="brew-status-bar">
       ${steps.map((s,i)=>`<div class="brew-status-step ${i<stepIdx?'done':i===stepIdx?'current':''}">${i<stepIdx?'✓ ':''} ${s}</div>`).join('')}
     </div>
 
-    <!-- Header card -->
+    <!-- ── HEADER ── -->
     <div class="brew-section" style="margin-bottom:20px;">
-      <div class="brew-section-title">Brew Details</div>
+      <div class="brew-section-title">${isDraft?'Recipe Details':'Brew Details'}</div>
       <div class="form-row form-row-3" style="margin-bottom:12px;">
-        <div class="form-group">
-          <label class="lbl">Brew Date</label>
-          <input class="inp" type="date" value="${log.date}" ${!editable?'disabled':''}
+        <div class="form-group"><label class="lbl">Brew Date</label>
+          <input class="inp" type="date" value="${log.date}" ${!canEdit?'disabled':''}
             onchange="updateLog(${id},'date',this.value)">
         </div>
-        <div class="form-group">
-          <label class="lbl">Beer</label>
-          <select class="inp" ${!editable?'disabled':''} onchange="updateLog(${id},'beer',this.value)">
+        <div class="form-group"><label class="lbl">Beer</label>
+          <select class="inp" ${!canEdit?'disabled':''} onchange="updateLog(${id},'beer',this.value)">
             ${getBeers(true).map(b=>`<option value="${b.code}" ${log.beer===b.code?'selected':''}>${b.name}</option>`).join('')}
           </select>
         </div>
-        <div class="form-group">
-          <label class="lbl">Target Volume (L)</label>
-          <input class="inp" type="number" value="${log.targetVol}" ${!editable?'disabled':''}
+        <div class="form-group"><label class="lbl">Target Volume (L)</label>
+          <input class="inp" type="number" value="${log.targetVol}" ${!canEdit?'disabled':''}
             onchange="updateLog(${id},'targetVol',+this.value)">
         </div>
       </div>
-      <div class="form-row form-row-3">
-        <div class="form-group">
-          <label class="lbl">Brewer</label>
-          <input class="inp" value="${log.brewer||''}" placeholder="Name" ${!editable?'disabled':''}
+      <div class="form-row form-row-${isDraft?'2':'3'}">
+        <div class="form-group"><label class="lbl">Brewer</label>
+          <input class="inp" value="${log.brewer||''}" placeholder="Name" ${!canEdit?'disabled':''}
             onchange="updateLog(${id},'brewer',this.value)">
         </div>
-        <div class="form-group">
-          <label class="lbl">Target Tank</label>
-          <select class="inp" ${!editable?'disabled':''} onchange="updateLog(${id},'tank',this.value)">
+        ${!isDraft?`<div class="form-group"><label class="lbl">Tank</label>
+          <select class="inp" ${!canEdit?'disabled':''} onchange="updateLog(${id},'tank',this.value)">
             <option value="">— select —</option>
             ${state.tanks.filter(t=>t.stage==='Empty'||t.id===log.tank).map(t=>`<option value="${t.id}" ${log.tank===t.id?'selected':''}>${t.name}</option>`).join('')}
           </select>
-        </div>
-        <div class="form-group">
-          <label class="lbl">Est. OG / FG</label>
+        </div>`:''}
+        <div class="form-group"><label class="lbl">Target OG / FG</label>
           <div style="display:flex;gap:6px;">
-            <input class="inp" value="${log.ogTarget||''}" placeholder="1.060" ${!editable?'disabled':''}
+            <input class="inp" value="${log.ogTarget||''}" placeholder="1.060" ${!canEdit?'disabled':''}
               onchange="updateLog(${id},'ogTarget',this.value)" style="width:50%;">
-            <input class="inp" value="${log.fgTarget||''}" placeholder="1.012" ${!editable?'disabled':''}
+            <input class="inp" value="${log.fgTarget||''}" placeholder="1.012" ${!canEdit?'disabled':''}
               onchange="updateLog(${id},'fgTarget',this.value)" style="width:50%;">
           </div>
         </div>
       </div>
     </div>
 
-    <!-- Recipe grid -->
+    <!-- ── RECIPE GRID ── -->
     <div class="brew-sheet">
 
-      <!-- Grain Bill -->
       <div class="brew-section">
         <div class="brew-section-title">🌾 Grain Bill</div>
         ${ingRows('grains', log.grains, ['Malt'])}
       </div>
 
-      <!-- Hops -->
       <div class="brew-section">
         <div class="brew-section-title">🌿 Hops</div>
         ${ingRows('hops', log.hops, ['Hops'])}
       </div>
 
-      <!-- Yeast -->
       <div class="brew-section">
         <div class="brew-section-title">🧫 Yeast</div>
         ${ingRows('yeast', log.yeast, ['Yeast'])}
       </div>
 
-      <!-- Other / Adjuncts -->
       <div class="brew-section">
-        <div class="brew-section-title">⚗️ Other (Salts++, Adjuncts, CO2)</div>
-        ${ingRows('other', log.other, ['Salts++','Adjuncts','Gases','Cleaning'])}
+        <div class="brew-section-title">⚗️ Adjuncts / Salts++</div>
+        ${ingRows('other', log.other, ['Salts++','Adjuncts','Gases'])}
       </div>
 
-      <!-- Process parameters -->
-      <div class="brew-section">
-        <div class="brew-section-title">⚙️ Process Parameters</div>
-        <div class="form-row form-row-2" style="margin-bottom:12px;">
-          <div class="form-group">
-            <label class="lbl">Mash Temp (°C)</label>
-            <input class="inp" type="number" step="0.5" value="${log.mashTemp||66}" ${!editable?'disabled':''}
-              onchange="updateLog(${id},'mashTemp',+this.value)">
+      <!-- ── MASH PROCESS PARAMETERS ── -->
+      <div class="brew-section" style="grid-column:1/-1;">
+        <div class="brew-section-title">⚙️ Mash Process</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+          <div>
+            ${mashStep('cerealMash',      'Cereal Mash', true)}
+            ${mashStep('bGlucanRest',     '\u03B2-Glucan Rest', false)}
+            ${mashStep('proteinRest',     'Protein Rest', false)}
+            ${mashStep('bAmylaseRest',    '\u03B2-Amylase Rest', false)}
+            ${mashStep('sacchRest',       'Saccharification Rest', false)}
+            ${mashStep('mashOut',         'Mash Out', false)}
           </div>
-          <div class="form-group">
-            <label class="lbl">Mash Time (min)</label>
-            <input class="inp" type="number" value="${log.mashTime||60}" ${!editable?'disabled':''}
-              onchange="updateLog(${id},'mashTime',+this.value)">
-          </div>
-        </div>
-        <div class="form-row form-row-2">
-          <div class="form-group">
-            <label class="lbl">Boil Time (min)</label>
-            <input class="inp" type="number" value="${log.boilTime||60}" ${!editable?'disabled':''}
-              onchange="updateLog(${id},'boilTime',+this.value)">
-          </div>
-          <div class="form-group">
-            <label class="lbl">Estimated Yield (L)</label>
-            <input class="inp" type="number" value="${log.yieldEst||''}" placeholder="e.g. 940" ${!editable?'disabled':''}
-              onchange="updateLog(${id},'yieldEst',+this.value)">
+          <div>
+            <!-- Boil -->
+            <div style="background:var(--bg);border-radius:8px;padding:10px 12px;margin-bottom:8px;">
+              <div style="font-size:13px;font-weight:700;margin-bottom:8px;color:var(--text);">Boil</div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+                <div><label class="lbl" style="font-size:10px;">Duration (min)</label>
+                  <input class="inp inp-sm" type="number" value="${log.boilTime||60}" ${!canEdit?'disabled':''}
+                    onchange="updateLog(${id},'boilTime',+this.value)"></div>
+                <div><label class="lbl" style="font-size:10px;">Est. Yield (L)</label>
+                  <input class="inp inp-sm" type="number" value="${log.yieldEst||''}" ${!canEdit?'disabled':''}
+                    onchange="updateLog(${id},'yieldEst',+this.value)"></div>
+              </div>
+            </div>
+            <!-- pH -->
+            <div style="background:var(--bg);border-radius:8px;padding:10px 12px;margin-bottom:8px;">
+              <div style="font-size:13px;font-weight:700;margin-bottom:8px;color:var(--text);">pH</div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+                <div><label class="lbl" style="font-size:10px;">Mash In pH</label>
+                  <input class="inp inp-sm" type="number" step="0.01" value="${log.mashInPH||''}" placeholder="5.2" ${!canEdit?'disabled':''}
+                    onchange="updateLog(${id},'mashInPH',+this.value)"></div>
+                <div><label class="lbl" style="font-size:10px;">Mash Out pH</label>
+                  <input class="inp inp-sm" type="number" step="0.01" value="${log.mashOutPH||''}" placeholder="5.4" ${!canEdit?'disabled':''}
+                    onchange="updateLog(${id},'mashOutPH',+this.value)"></div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
+
+      <!-- Brew Day Checklist (In Progress only) -->
+      ${isInProgress ? ipChecklist() : ''}
+
+      <!-- Stock check (Draft only) -->
+      ${isDraft ? stockCheck() : ''}
 
       <!-- Notes -->
-      <div class="brew-section">
-        <div class="brew-section-title">📝 Brew Notes</div>
-        <textarea class="inp" rows="6" placeholder="Observations, issues, adjustments during brew day…" ${!editable?'disabled':''}
+      <div class="brew-section" style="grid-column:1/-1;">
+        <div class="brew-section-title">📝 Notes</div>
+        <textarea class="inp" rows="4" placeholder="${isDraft?'Recipe notes, special instructions for brewer…':'Observations, issues, adjustments during brew day…'}" ${!canEdit?'disabled':''}
           onchange="updateLog(${id},'notes',this.value)">${log.notes||''}</textarea>
       </div>
-
-      <!-- Stock check -->
-      ${stockCheck()}
 
     </div>
 
     ${isCompleted?`
     <div style="margin-top:20px;background:#DCFCE7;border:1px solid #86EFAC;border-radius:10px;padding:16px 20px;font-size:14px;color:#15803D;">
-      ✅ <strong>Brew completed.</strong>${log.inventoryDeducted?' Raw material stock was deducted when this brew was marked complete.':' Stock was not automatically deducted.'}
+      ✅ <strong>Brew completed.</strong>${log.inventoryDeducted?' Stock was deducted on completion.':' Stock was not automatically deducted.'}
     </div>`:''}
   `;
 }
 
-// ── Brew Log mutations ────────────────────────────────────────────────────────
-function updateLog(id, field, val) {
+function updateMashStep(id, stepKey, field, val) {
+  const i = state.brewLogs.findIndex(b=>b.id===id);
+  if (i<0) return;
+  if (!state.brewLogs[i].mash) state.brewLogs[i].mash = {};
+  if (!state.brewLogs[i].mash[stepKey]) state.brewLogs[i].mash[stepKey] = {};
+  state.brewLogs[i].mash[stepKey][field] = val;
+  saveState(); renderContent();
+}
+
+function updateBrewCheck(id, key, val) {
+  const i = state.brewLogs.findIndex(b=>b.id===id);
+  if (i<0) return;
+  if (!state.brewLogs[i].checks) state.brewLogs[i].checks = {};
+  state.brewLogs[i].checks[key] = val;
+  saveState(); renderContent();
+}
+
+
   const i = state.brewLogs.findIndex(b=>b.id===id);
   if (i<0) return;
   state.brewLogs[i][field] = val;
