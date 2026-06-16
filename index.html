@@ -994,7 +994,7 @@ function renderRMInventory() {
             <td style="font-size:13px;color:var(--muted);">${r.lastDeliveryDate?fmtDate(r.lastDeliveryDate):'—'}</td>
           `:''}
           <td style="text-align:right;white-space:nowrap;">
-            ${isMalt?`<button class="btn btn-sm btn-ghost" onclick="openTransferModal(${r.id})" style="margin-right:4px;">🏭 Transfer</button>`:''}
+            ${isMalt&&isMaltTab?`<button class="btn btn-sm btn-ghost" onclick="openTransferModal(${r.id})" style="margin-right:4px;">🏭 Transfer</button>`:''}
             <button class="btn btn-sm btn-ghost" onclick="openEditRM(${r.id})">✏️</button>
             <button class="btn btn-sm btn-ghost" onclick="openAdjRM(${r.id})" style="margin-left:4px;">⚖️</button>
           </td>
