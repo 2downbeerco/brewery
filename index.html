@@ -246,13 +246,15 @@ const SYNC_KEYS = ['tanks','rawMaterials','beerInventory','schedule','brewLogs',
                    'purchaseOrders','stockTakes','beers','gravityLogs'];
 
 async function pushToSupabase() {
+  const now = new Date().toISOString();
   const rows = SYNC_KEYS.map(key => ({
     key,
     value: state[key],
-    updated_at: new Date().toISOString()
+    updated_at: now
   }));
   try {
     await sbFetch('POST', '/rest/v1/brew_state', rows);
+    _lastPushTime = now;
     setSyncStatus(true);
   } catch(e) {
     console.warn('Supabase push failed:', e.message);
@@ -268,15 +270,19 @@ function setSyncStatus(ok) {
   lbl.textContent = ok ? 'Synced' : 'Offline';
 }
 
+let _lastPushTime = null;
 let _initialSyncDone = false;
 
+// Poll pull — only apply rows newer than our last push
 async function pullFromSupabase() {
   try {
     const rows = await sbFetch('GET', '/rest/v1/brew_state?select=key,value,updated_at');
-    if (!rows || !rows.length) return false;
+    if (!rows || !rows.length) { setSyncStatus(true); return false; }
     let changed = false;
     rows.forEach(row => {
       if (!SYNC_KEYS.includes(row.key)) return;
+      // If we pushed more recently than this row, our data is newer — skip
+      if (_lastPushTime && row.updated_at && row.updated_at <= _lastPushTime) return;
       const fresh = JSON.stringify(row.value);
       const current = JSON.stringify(state[row.key]);
       if (fresh !== current) {
@@ -294,16 +300,19 @@ async function pullFromSupabase() {
   }
 }
 
-// Pull and ALWAYS apply Supabase data — used on initial load
+// Force pull — always apply Supabase data, used on initial load only
 async function pullFromSupabaseForce() {
   try {
-    const rows = await sbFetch('GET', '/rest/v1/brew_state?select=key,value');
-    if (!rows || !rows.length) return false;
+    const rows = await sbFetch('GET', '/rest/v1/brew_state?select=key,value,updated_at');
+    if (!rows || !rows.length) { setSyncStatus(true); return false; }
     rows.forEach(row => {
       if (!SYNC_KEYS.includes(row.key)) return;
       state[row.key] = row.value;
       localStorage.setItem('brew_' + row.key, JSON.stringify(row.value));
     });
+    // Set _lastPushTime to the max updated_at from server so poll doesn't immediately re-apply
+    const maxTs = rows.reduce((m,r)=>r.updated_at>m?r.updated_at:m,'');
+    if (maxTs) _lastPushTime = maxTs;
     setSyncStatus(true);
     return true;
   } catch(e) {
