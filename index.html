@@ -456,7 +456,7 @@ function renderBrewList() {
           <div style="width:36px;height:36px;border-radius:8px;background:${beerColor(b.beer)};flex-shrink:0;"></div>
           <div style="flex:1;min-width:0;">
             <div style="font-size:15px;font-weight:700;">${beerName(b.beer)}</div>
-            <div style="font-size:13px;color:var(--muted);">${fmtDate(b.date)} · ${b.targetVol}L${b.brewer?' · '+b.brewer:''}</div>
+            <div style="font-size:13px;color:var(--muted);">${fmtDate(b.date)} · ${b.targetVol}L${b.batchNo?' · <strong>'+b.batchNo+'</strong>':''}${b.brewer?' · '+b.brewer:''}</div>
           </div>
           <div style="text-align:right;flex-shrink:0;">
             <span class="badge ${statusClass[b.status]||'badge-gray'}">${b.status}</span>
@@ -523,7 +523,28 @@ function renderBrewDetail(id) {
   const steps = ['Draft','In Progress','Completed'];
   const stepIdx = steps.indexOf(log.status);
 
-  // ── Ingredient row builder (inventory-linked, no price) ───────────────────
+  // ── Get all batches for an RM from PO history ─────────────────────────────
+  function getBatches(rmId) {
+    const batches = [];
+    state.purchaseOrders.forEach(po => {
+      po.items.forEach(item => {
+        if (item.rmId == rmId && item.batchNo) {
+          // avoid duplicates
+          if (!batches.find(b=>b.batchNo===item.batchNo)) {
+            batches.push({
+              batchNo:    item.batchNo,
+              extractLdk: item.extractLdk || null,
+              alphaAcid:  item.alphaAcid  || null,
+              deliveryDate: po.deliveryDate || null,
+            });
+          }
+        }
+      });
+    });
+    return batches;
+  }
+
+  // ── Ingredient row builder ────────────────────────────────────────────────
   function ingRows(section, items, cats) {
     const rmList = cats ? state.rawMaterials.filter(r=>cats.includes(r.category)) : state.rawMaterials;
     const rmOpts = rmList.map(r=>`<option value="${r.id}">${r.name}</option>`).join('');
@@ -531,24 +552,54 @@ function renderBrewDetail(id) {
     if (!canEdit && items.length===0) return '<div style="color:var(--muted);font-size:13px;">None specified</div>';
 
     return items.map((ing,idx)=>{
-      const rm = state.rawMaterials.find(r=>r.id==ing.rmId);
+      const rm    = state.rawMaterials.find(r=>r.id==ing.rmId);
       const isMalt = rm?.category==='Malt';
       const isHops = rm?.category==='Hops';
+      const batches = rm ? getBatches(rm.id) : [];
+      const selBatch = batches.find(b=>b.batchNo===ing.batchNo) || batches[0] || null;
 
       if (!canEdit) {
-        // Read-only: show as clean rows
-        return `<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);">
-          <div style="flex:1;font-size:14px;font-weight:600;">${ing.name||'—'}</div>
-          <div style="font-size:13px;color:var(--muted);">${ing.qty||0} ${ing.unit||''}</div>
-          ${isMalt&&rm?.lastBatchNo?`<div style="font-size:11px;color:var(--muted);">Batch: ${rm.lastBatchNo}</div>`:''}
-          ${isMalt&&rm?.extractLdk!=null?`<div style="font-size:11px;color:var(--muted);">LDK: ${rm.extractLdk}</div>`:''}
-          ${isHops&&rm?.alphaAcid!=null?`<div style="font-size:11px;color:var(--muted);">AA: ${rm.alphaAcid}%</div>`:''}
+        // Read-only display
+        return `<div style="padding:9px 0;border-bottom:1px solid var(--border);">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+            <span style="font-size:14px;font-weight:600;">${ing.name||'—'}</span>
+            <span style="font-size:13px;color:var(--muted);">${ing.qty||0} ${ing.unit||''}</span>
+          </div>
+          ${ing.batchNo?`<div style="font-size:12px;color:var(--muted);margin-top:3px;">
+            Batch: <strong>${ing.batchNo}</strong>
+            ${isMalt&&ing.extractLdk!=null?` · LDK: <strong>${ing.extractLdk}</strong>`:''}
+            ${isHops&&ing.alphaAcid!=null?` · AA: <strong>${ing.alphaAcid}%</strong>`:''}
+          </div>`:''}
+        </div>`;
+      }
+
+      // Batch selector row
+      let batchRow = '';
+      if (rm && batches.length > 0) {
+        const batchOpts = batches.map(b=>`<option value="${b.batchNo}" ${ing.batchNo===b.batchNo?'selected':''}>${b.batchNo}${b.deliveryDate?' ('+fmtDate(b.deliveryDate)+')':''}</option>`).join('');
+        const picked = batches.find(b=>b.batchNo===ing.batchNo) || batches[0];
+        batchRow = `
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:6px;">
+            <select class="inp inp-sm" style="flex:1;min-width:160px;" onchange="selectIngBatch('${section}',${idx},this.value)">
+              ${batchOpts}
+            </select>
+            ${isMalt&&picked?.extractLdk!=null?`<span style="font-size:11px;color:var(--muted);">LDK: <strong>${picked.extractLdk}</strong></span>`:''}
+            ${isHops&&picked?.alphaAcid!=null?`<span style="font-size:11px;color:var(--muted);">AA: <strong>${picked.alphaAcid}%</strong></span>`:''}
+          </div>`;
+      } else if (rm) {
+        // RM exists but no PO batches — show last known if any, or just a text input
+        const hasBatch = rm.lastBatchNo;
+        batchRow = `<div style="margin-top:6px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+          <input class="inp inp-sm" style="flex:1;min-width:160px;" value="${ing.batchNo||rm.lastBatchNo||''}" placeholder="Batch no."
+            onchange="updateIng('${section}',${idx},'batchNo',this.value)">
+          ${isMalt&&rm.extractLdk!=null?`<span style="font-size:11px;color:var(--muted);">LDK: <strong>${rm.extractLdk}</strong></span>`:''}
+          ${isHops&&rm.alphaAcid!=null?`<span style="font-size:11px;color:var(--muted);">AA: <strong>${rm.alphaAcid}%</strong></span>`:''}
         </div>`;
       }
 
       return `
         <div style="background:var(--bg);border-radius:8px;padding:10px;margin-bottom:8px;">
-          <div style="display:grid;grid-template-columns:1fr 80px 60px 24px;gap:6px;align-items:center;margin-bottom:${isMalt||isHops?'8px':'0'};">
+          <div style="display:grid;grid-template-columns:1fr 80px 60px 24px;gap:6px;align-items:center;">
             <select class="inp inp-sm" onchange="updateIng('${section}',${idx},'rmId',this.value);updateIngUnit('${section}',${idx},this)">
               <option value="">— select —</option>
               ${rmOpts.replace(`value="${ing.rmId}"`,`value="${ing.rmId}" selected`)}
@@ -559,14 +610,7 @@ function renderBrewDetail(id) {
               onchange="updateIng('${section}',${idx},'unit',this.value)">
             <button class="del-btn" onclick="removeIng('${section}',${idx})">✕</button>
           </div>
-          ${isMalt?`<div style="display:flex;gap:8px;flex-wrap:wrap;">
-            <div style="font-size:11px;color:var(--muted);">Batch: <strong>${rm?.lastBatchNo||'—'}</strong></div>
-            <div style="font-size:11px;color:var(--muted);">Extract LDK: <strong>${rm?.extractLdk!=null?rm.extractLdk:'—'}</strong></div>
-          </div>`:''}
-          ${isHops?`<div style="display:flex;gap:8px;flex-wrap:wrap;">
-            <div style="font-size:11px;color:var(--muted);">Batch: <strong>${rm?.lastBatchNo||'—'}</strong></div>
-            <div style="font-size:11px;color:var(--muted);">Alpha Acid: <strong>${rm?.alphaAcid!=null?rm.alphaAcid+'%':'—'}</strong></div>
-          </div>`:''}
+          ${batchRow}
         </div>`;
     }).join('') + (canEdit?`<button class="btn btn-ghost btn-sm" style="margin-top:4px;" onclick="addIng('${section}','${cats?cats[0]:''}')">+ Add</button>`:'');
   }
@@ -705,10 +749,14 @@ function renderBrewDetail(id) {
             onchange="updateLog(${id},'targetVol',+this.value)">
         </div>
       </div>
-      <div class="form-row form-row-${isDraft?'2':'3'}">
+      <div class="form-row form-row-${isDraft?'3':'3'}">
         <div class="form-group"><label class="lbl">Brewer</label>
           <input class="inp" value="${log.brewer||''}" placeholder="Name" ${!canEdit?'disabled':''}
             onchange="updateLog(${id},'brewer',this.value)">
+        </div>
+        <div class="form-group"><label class="lbl">Batch No.</label>
+          <input class="inp" value="${log.batchNo||''}" placeholder="e.g. BB-2025-06" ${!canEdit?'disabled':''}
+            onchange="updateLog(${id},'batchNo',this.value)">
         </div>
         ${!isDraft?`<div class="form-group"><label class="lbl">Tank</label>
           <select class="inp" ${!canEdit?'disabled':''} onchange="updateLog(${id},'tank',this.value)">
@@ -794,9 +842,6 @@ function renderBrewDetail(id) {
       <!-- Brew Day Checklist (In Progress only) -->
       ${isInProgress ? ipChecklist() : ''}
 
-      <!-- Stock check (Draft only) -->
-      ${isDraft ? stockCheck() : ''}
-
       <!-- Notes -->
       <div class="brew-section" style="grid-column:1/-1;">
         <div class="brew-section-title">📝 Notes</div>
@@ -831,11 +876,22 @@ function updateBrewCheck(id, key, val) {
 }
 
 
-function updateLog(id, field, val) {
+function selectIngBatch(section, idx, batchNo) {
+  const id = window._openBrewId;
   const i = state.brewLogs.findIndex(b=>b.id===id);
   if (i<0) return;
-  state.brewLogs[i][field] = val;
-  saveState();
+  const ing = state.brewLogs[i][section][idx];
+  ing.batchNo = batchNo;
+  // Look up batch details from PO history
+  state.purchaseOrders.forEach(po => {
+    po.items.forEach(item => {
+      if (item.rmId == ing.rmId && item.batchNo === batchNo) {
+        if (item.extractLdk != null) ing.extractLdk = item.extractLdk;
+        if (item.alphaAcid  != null) ing.alphaAcid  = item.alphaAcid;
+      }
+    });
+  });
+  saveState(); renderContent();
 }
 
 function addIng(section, hintCat) {
@@ -861,12 +917,33 @@ function updateIng(section, idx, field, val) {
   const i = state.brewLogs.findIndex(b=>b.id===id);
   if (i<0) return;
   state.brewLogs[i][section][idx][field] = field==='rmId' ? +val : val;
-  // also update name from rmId
   if (field==='rmId') {
     const rm = state.rawMaterials.find(r=>r.id==val);
-    if (rm) { state.brewLogs[i][section][idx].name=rm.name; state.brewLogs[i][section][idx].unit=rm.unit; }
+    if (rm) {
+      state.brewLogs[i][section][idx].name = rm.name;
+      state.brewLogs[i][section][idx].unit = rm.unit;
+      // Auto-select first available batch from PO history
+      const batches = [];
+      state.purchaseOrders.forEach(po => {
+        po.items.forEach(item => {
+          if (item.rmId == val && item.batchNo && !batches.find(b=>b.batchNo===item.batchNo)) {
+            batches.push(item);
+          }
+        });
+      });
+      if (batches.length > 0) {
+        state.brewLogs[i][section][idx].batchNo   = batches[0].batchNo;
+        if (batches[0].extractLdk != null) state.brewLogs[i][section][idx].extractLdk = batches[0].extractLdk;
+        if (batches[0].alphaAcid  != null) state.brewLogs[i][section][idx].alphaAcid  = batches[0].alphaAcid;
+      } else {
+        // fall back to lastBatchNo on RM record
+        state.brewLogs[i][section][idx].batchNo   = rm.lastBatchNo || '';
+        state.brewLogs[i][section][idx].extractLdk = rm.extractLdk  || null;
+        state.brewLogs[i][section][idx].alphaAcid  = rm.alphaAcid   || null;
+      }
+    }
   }
-  saveState();
+  saveState(); renderContent();
 }
 
 function updateIngUnit(section, idx, selectEl) {
