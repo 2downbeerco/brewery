@@ -241,24 +241,7 @@ let state = {
     { id:'BBT2',name:'BBT 2',type:'Bright Beer',cap:500,  beer:'DC', vol:500, stage:'Ready',       since:'2025-06-03', temp:2,  gravity:1.008 },
     { id:'BBT3',name:'BBT 3',type:'Bright Beer',cap:500,  beer:null, vol:0,   stage:'Empty',       since:null, temp:null, gravity:null },
   ],
-  rawMaterials: loadLS('brew_raw') || [
-    { id:1,  name:'Pale Malt (Pilsner)', unit:'kg',  stock:850,  warehouseStock:700, breweryStock:150, reorder:200, category:'Malt', lastCost:0 },
-    { id:2,  name:'Wheat Malt',          unit:'kg',  stock:320,  warehouseStock:280, breweryStock:40,  reorder:100, category:'Malt', lastCost:0 },
-    { id:3,  name:'Crystal 60',          unit:'kg',  stock:90,   warehouseStock:70,  breweryStock:20,  reorder:50,  category:'Malt', lastCost:0 },
-    { id:4,  name:'Carapils',            unit:'kg',  stock:40,   warehouseStock:30,  breweryStock:10,  reorder:50,  category:'Malt', lastCost:0 },
-    { id:5,  name:'Centennial Hops',     unit:'kg',  stock:12,   reorder:5,   category:'Hops', lastCost:0 },
-    { id:6,  name:'Cascade Hops',        unit:'kg',  stock:8,    reorder:5,   category:'Hops', lastCost:0 },
-    { id:7,  name:'Citra Hops',          unit:'kg',  stock:3.5,  reorder:4,   category:'Hops', lastCost:0 },
-    { id:8,  name:'Saaz Hops',           unit:'kg',  stock:6,    reorder:3,   category:'Hops', lastCost:0 },
-    { id:9,  name:'Lallemand Wit Yeast', unit:'pkt', stock:24,   reorder:10,  category:'Yeast', lastCost:0 },
-    { id:10, name:'Fermentis US-05',     unit:'pkt', stock:18,   reorder:8,   category:'Yeast', lastCost:0 },
-    { id:11, name:'Gypsum',              unit:'kg',  stock:5,    reorder:2,   category:'Water Chem', lastCost:0 },
-    { id:12, name:'Lactic Acid',         unit:'L',   stock:3,    reorder:1,   category:'Water Chem', lastCost:0 },
-    { id:13, name:'Finings (Biofine)',   unit:'L',   stock:8,    reorder:3,   category:'Adjuncts', lastCost:0 },
-    { id:14, name:'CO2',                 unit:'kg',  stock:45,   reorder:20,  category:'Gases', lastCost:0 },
-    { id:15, name:'Caustic (CIP)',       unit:'kg',  stock:30,   reorder:10,  category:'Cleaning', lastCost:0 },
-    { id:16, name:'Peracetic Acid',      unit:'L',   stock:12,   reorder:5,   category:'Cleaning', lastCost:0 },
-  ],
+  rawMaterials: loadLS('brew_raw') || [],
   beerInventory: loadLS('brew_beer_inv') || [
     { id:1, beer:'BB', kegs20:8,  kegs50:2, litres:260, location:'Cold Room' },
     { id:2, beer:'GR', kegs20:4,  kegs50:0, litres:80,  location:'Cold Room' },
@@ -277,7 +260,7 @@ let state = {
   // inventoryDeducted: bool — true once stock has been deducted
   brewLogs: loadLS('brew_logs') || [],
   purchaseOrders: loadLS('brew_pos') || [],
-  nextTankId: 8, nextRMId: 17, nextSchedId: 5, nextBrewId: 1, nextPOId: 1,
+  nextTankId: 8, nextRMId: 1, nextSchedId: 5, nextBrewId: 1, nextPOId: 1,
 };
 // make sure nextBrewId is beyond existing logs
 if (state.brewLogs.length) {
