@@ -2760,9 +2760,7 @@ function renderBeers() {
         </div>
         <div class="form-row form-row-2">
           <div class="form-group"><label class="lbl">Style</label>
-            <select class="inp" id="bm-style">
-              ${BEER_STYLES.map(s=>`<option>${s}</option>`).join('')}
-            </select>
+            <input class="inp" id="bm-style" placeholder="e.g. India Pale Ale">
           </div>
           <div class="form-group"><label class="lbl">Colour</label>
             <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px;">
@@ -2772,10 +2770,9 @@ function renderBeers() {
             <input type="hidden" id="bm-color" value="${BEER_COLORS[0]}">
           </div>
         </div>
-        <div class="form-row form-row-3">
+        <div class="form-row form-row-2">
           <div class="form-group"><label class="lbl">ABV %</label><input class="inp" id="bm-abv" type="number" step="0.1" placeholder="5.0"></div>
           <div class="form-group"><label class="lbl">IBU</label><input class="inp" id="bm-ibu" type="number" placeholder="30"></div>
-          <div class="form-group"><label class="lbl">Target OG</label><input class="inp" id="bm-og" type="number" step="0.001" placeholder="1.052"></div>
         </div>
         <div class="form-group"><label class="lbl">Notes / Description</label>
           <textarea class="inp" id="bm-notes" rows="3" placeholder="Tasting notes, recipe highlights…"></textarea>
@@ -2956,10 +2953,9 @@ function openAddBeer() {
   document.getElementById('bm-code-orig').value='';
   document.getElementById('bm-name').value='';
   document.getElementById('bm-code').value='';
-  document.getElementById('bm-style').value=BEER_STYLES[0];
+  document.getElementById('bm-style').value='';
   document.getElementById('bm-abv').value='';
   document.getElementById('bm-ibu').value='';
-  document.getElementById('bm-og').value='';
   document.getElementById('bm-notes').value='';
   document.getElementById('bm-status-row').style.display='none';
   document.getElementById('bm-color').value=BEER_COLORS[0];
@@ -2974,10 +2970,9 @@ function openEditBeer(code) {
   document.getElementById('bm-code-orig').value=b.code;
   document.getElementById('bm-name').value=b.name;
   document.getElementById('bm-code').value=b.code;
-  document.getElementById('bm-style').value=b.style||BEER_STYLES[0];
+  document.getElementById('bm-style').value=b.style||'';
   document.getElementById('bm-abv').value=b.abv||'';
   document.getElementById('bm-ibu').value=b.ibu||'';
-  document.getElementById('bm-og').value=b.og||'';
   document.getElementById('bm-notes').value=b.notes||'';
   document.getElementById('bm-color').value=b.color||BEER_COLORS[0];
   document.getElementById('bm-active').value=b.active===false?'false':'true';
@@ -3006,7 +3001,6 @@ function saveBeer() {
     color: document.getElementById('bm-color').value||BEER_COLORS[0],
     abv: +document.getElementById('bm-abv').value||null,
     ibu: +document.getElementById('bm-ibu').value||null,
-    og:  +document.getElementById('bm-og').value||null,
     notes: document.getElementById('bm-notes').value.trim(),
     active: document.getElementById('bm-active').value!=='false',
   };
