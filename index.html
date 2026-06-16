@@ -229,6 +229,7 @@ function saveState() {
   localStorage.setItem('brew_schedule', JSON.stringify(state.schedule));
   localStorage.setItem('brew_logs',     JSON.stringify(state.brewLogs));
   localStorage.setItem('brew_pos',      JSON.stringify(state.purchaseOrders));
+  localStorage.setItem('brew_stocktakes', JSON.stringify(state.stockTakes));
 }
 
 let state = {
@@ -260,7 +261,8 @@ let state = {
   // inventoryDeducted: bool — true once stock has been deducted
   brewLogs: loadLS('brew_logs') || [],
   purchaseOrders: loadLS('brew_pos') || [],
-  nextTankId: 8, nextRMId: 1, nextSchedId: 5, nextBrewId: 1, nextPOId: 1,
+  stockTakes: loadLS('brew_stocktakes') || [],
+  nextTankId: 8, nextRMId: 1, nextSchedId: 5, nextBrewId: 1, nextPOId: 1, nextSTId: 1,
 };
 // make sure nextBrewId is beyond existing logs
 if (state.brewLogs.length) {
@@ -268,6 +270,9 @@ if (state.brewLogs.length) {
 }
 if (state.purchaseOrders.length) {
   state.nextPOId = Math.max(...state.purchaseOrders.map(p=>p.id)) + 1;
+}
+if (state.stockTakes.length) {
+  state.nextSTId = Math.max(...state.stockTakes.map(s=>s.id)) + 1;
 }
 // Migrate old RM records to new schema
 state.rawMaterials.forEach(r => {
@@ -904,8 +909,9 @@ function renderRaw() {
     <div style="display:flex;gap:8px;margin-bottom:20px;">
       <button class="btn btn-sm ${subTab==='inventory'?'btn-primary':'btn-ghost'}" onclick="setRMSubTab('inventory')">📦 Inventory</button>
       <button class="btn btn-sm ${subTab==='po'?'btn-primary':'btn-ghost'}" onclick="setRMSubTab('po')">🧾 Purchase Orders</button>
+      <button class="btn btn-sm ${subTab==='stocktake'?'btn-primary':'btn-ghost'}" onclick="setRMSubTab('stocktake')">📊 Stock Take</button>
     </div>
-    ${subTab==='inventory' ? renderRMInventory() : renderPOList()}
+    ${subTab==='inventory' ? renderRMInventory() : subTab==='po' ? renderPOList() : renderStockTake()}
   `;
 }
 
@@ -1496,6 +1502,211 @@ function togglePOPaid(id){
   po.paid=!po.paid;
   saveState();renderContent();
   toast(po.paid?'Marked as paid':'Marked as unpaid');
+}
+
+// ── Stock Take ────────────────────────────────────────────────────────────────
+function renderStockTake() {
+  const takes = [...state.stockTakes].sort((a,b)=>b.date.localeCompare(a.date));
+  const active = takes.find(t=>t.status==='In Progress');
+
+  return `
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:12px;">
+      <div>
+        <div style="font-size:16px;font-weight:700;">Stock Take</div>
+        <div style="font-size:13px;color:var(--muted);margin-top:2px;">Enter actual physical counts. Variances are logged automatically.</div>
+      </div>
+      ${active ? `<span class="badge badge-orange" style="font-size:13px;padding:6px 12px;">Stock take in progress</span>` :
+        `<button class="btn btn-primary" onclick="startStockTake()">+ New Stock Take</button>`}
+    </div>
+
+    ${active ? renderActiveStockTake(active) : ''}
+
+    ${takes.filter(t=>t.status==='Completed').length ? `
+      <div style="margin-top:24px;">
+        <div class="section-title" style="margin-bottom:12px;">History</div>
+        ${takes.filter(t=>t.status==='Completed').map(st=>{
+          const variances = st.lines.filter(l=>l.variance!==0);
+          const totalWastage = st.lines.reduce((s,l)=>s+(l.variance<0?Math.abs(l.variance)*(l.lastCost||0):0),0);
+          return `
+          <div class="card" style="margin-bottom:10px;cursor:pointer;" onclick="openStockTakeView(${st.id})">
+            <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
+              <div>
+                <div style="font-size:15px;font-weight:700;">${fmtDate(st.date)} Stock Take</div>
+                <div style="font-size:13px;color:var(--muted);margin-top:2px;">${st.lines.length} items counted · ${variances.length} variance${variances.length!==1?'s':''}</div>
+              </div>
+              <div style="text-align:right;">
+                ${totalWastage>0?`<div style="font-size:14px;font-weight:700;color:var(--red);">₹${totalWastage.toFixed(2)} wastage</div>`:'<div style="font-size:13px;color:var(--green);font-weight:600;">✓ No wastage</div>'}
+                <div style="font-size:11px;color:var(--muted);">by ${st.doneBy||'—'}</div>
+              </div>
+            </div>
+          </div>`;}).join('')}
+      </div>` : ''}
+
+    <!-- View past stock take modal -->
+    <div id="st-view-modal" class="modal-overlay" style="display:none;" onclick="if(event.target===this)this.style.display='none'">
+      <div class="modal-box" style="max-width:680px;">
+        <div class="modal-title" id="st-view-title">Stock Take</div>
+        <div id="st-view-body"></div>
+        <div class="modal-actions">
+          <button class="btn btn-ghost" onclick="document.getElementById('st-view-modal').style.display='none'">Close</button>
+        </div>
+      </div>
+    </div>`;
+}
+
+function renderActiveStockTake(st) {
+  return `
+    <div class="card" style="border-color:var(--accent);">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:8px;">
+        <div>
+          <div style="font-size:15px;font-weight:700;">${fmtDate(st.date)} — Stock Take in Progress</div>
+          <div style="font-size:13px;color:var(--muted);">Enter actual physical counts below. Leave blank if not counted yet.</div>
+        </div>
+        <div style="display:flex;gap:8px;">
+          <button class="btn btn-danger btn-sm" onclick="cancelStockTake(${st.id})">Cancel</button>
+          <button class="btn btn-green" onclick="completeStockTake(${st.id})">✓ Complete & Save</button>
+        </div>
+      </div>
+      <div class="form-group" style="margin-bottom:16px;">
+        <label class="lbl">Counted by</label>
+        <input class="inp" id="st-done-by" value="${st.doneBy||''}" placeholder="Name" style="max-width:240px;"
+          oninput="updateStockTakeField(${st.id},'doneBy',this.value)">
+      </div>
+      <div class="tbl-wrap"><table class="tbl">
+        <thead><tr>
+          <th>Item</th><th>Category</th><th>Expected</th><th>Actual Count</th><th>Variance</th><th>Est. Loss Value</th>
+        </tr></thead>
+        <tbody>
+          ${st.lines.map((line,idx)=>{
+            const actual = line.actual!=null?line.actual:'';
+            const variance = line.actual!=null ? line.actual-line.expected : null;
+            const lossVal = variance!=null&&variance<0 ? Math.abs(variance)*(line.lastCost||0) : 0;
+            const varColor = variance==null?'var(--muted)':variance<0?'var(--red)':variance>0?'var(--orange)':'var(--green)';
+            const varText = variance==null?'—':(variance>0?'+':'')+variance.toFixed(2)+' '+line.unit;
+            return `<tr>
+              <td><strong>${line.name}</strong></td>
+              <td><span class="badge badge-gray" style="font-size:10px;">${line.category}</span></td>
+              <td>${line.expected} ${line.unit}</td>
+              <td>
+                <input class="inp inp-sm" type="number" step="0.01" value="${actual}" placeholder="count"
+                  style="width:100px;"
+                  oninput="updateSTLine(${st.id},${idx},+this.value)">
+              </td>
+              <td style="font-weight:600;color:${varColor};">${varText}</td>
+              <td style="font-size:13px;color:var(--red);">${lossVal>0?'₹'+lossVal.toFixed(2):'—'}</td>
+            </tr>`;}).join('')}
+        </tbody>
+      </table></div>
+    </div>`;
+}
+
+function startStockTake() {
+  const today = new Date().toISOString().slice(0,10);
+  const lines = state.rawMaterials.map(r=>({
+    rmId: r.id,
+    name: r.name,
+    category: r.category,
+    unit: r.unit,
+    expected: +(rmStatus(r).total),
+    actual: null,
+    variance: null,
+    lastCost: r.lastCost||0,
+  }));
+  const st = { id: state.nextSTId++, date: today, status:'In Progress', doneBy:'', lines };
+  state.stockTakes.push(st);
+  saveState();
+  renderContent();
+  toast('Stock take started');
+}
+
+function updateStockTakeField(id, field, val) {
+  const st = state.stockTakes.find(s=>s.id===id);
+  if(st) { st[field]=val; saveState(); }
+}
+
+function updateSTLine(stId, idx, val) {
+  const st = state.stockTakes.find(s=>s.id===stId);
+  if(!st) return;
+  st.lines[idx].actual = val;
+  st.lines[idx].variance = val - st.lines[idx].expected;
+  saveState();
+  // re-render just the variance cell without full re-render for smoothness
+  renderContent();
+}
+
+function completeStockTake(id) {
+  const st = state.stockTakes.find(s=>s.id===id);
+  if(!st) return;
+  const counted = st.lines.filter(l=>l.actual!=null).length;
+  if(counted===0){toast('Count at least one item before completing',false);return;}
+  if(!confirm(`Complete stock take? ${counted} of ${st.lines.length} items counted. Stock levels will be updated to actual counts.`)) return;
+
+  // Update stock levels to actual counts
+  st.lines.forEach(line=>{
+    if(line.actual==null) return;
+    const i = state.rawMaterials.findIndex(r=>r.id===line.rmId);
+    if(i<0) return;
+    const r = state.rawMaterials[i];
+    if(r.category==='Malt'){
+      // distribute actual across warehouse+brewery proportionally
+      const prev = (r.warehouseStock||0)+(r.breweryStock||0);
+      if(prev>0){
+        const ratio = line.actual/prev;
+        r.warehouseStock = Math.round((r.warehouseStock||0)*ratio*1000)/1000;
+        r.breweryStock   = Math.round((r.breweryStock||0)*ratio*1000)/1000;
+      } else {
+        r.warehouseStock = line.actual;
+        r.breweryStock   = 0;
+      }
+      r.stock = r.warehouseStock + r.breweryStock;
+    } else {
+      r.stock = line.actual;
+    }
+  });
+
+  st.status = 'Completed';
+  saveState();
+  renderContent();
+  const variances = st.lines.filter(l=>l.variance!==0&&l.actual!=null).length;
+  toast(`Stock take complete. ${variances} variance${variances!==1?'s':''} recorded.`);
+}
+
+function cancelStockTake(id) {
+  if(!confirm('Cancel this stock take? No changes will be saved.')) return;
+  state.stockTakes = state.stockTakes.filter(s=>s.id!==id);
+  saveState();
+  renderContent();
+  toast('Stock take cancelled');
+}
+
+function openStockTakeView(id) {
+  const st = state.stockTakes.find(s=>s.id===id);
+  if(!st) return;
+  const variances = st.lines.filter(l=>l.variance!==0&&l.actual!=null);
+  const totalLoss = st.lines.reduce((s,l)=>s+(l.variance<0?Math.abs(l.variance)*(l.lastCost||0):0),0);
+
+  document.getElementById('st-view-title').textContent = `${fmtDate(st.date)} Stock Take — ${st.doneBy||''}`;
+  document.getElementById('st-view-body').innerHTML = `
+    ${totalLoss>0?`<div style="background:#FEE2E2;border:1px solid #FCA5A5;border-radius:8px;padding:10px 14px;margin-bottom:16px;font-size:13px;color:var(--red);">
+      Total estimated wastage: <strong>₹${totalLoss.toFixed(2)}</strong>
+    </div>`:'<div style="background:#DCFCE7;border:1px solid #86EFAC;border-radius:8px;padding:10px 14px;margin-bottom:16px;font-size:13px;color:var(--green);">✓ No wastage recorded</div>'}
+    <div class="tbl-wrap"><table class="tbl">
+      <thead><tr><th>Item</th><th>Category</th><th>Expected</th><th>Actual</th><th>Variance</th><th>Loss Value</th></tr></thead>
+      <tbody>${st.lines.filter(l=>l.actual!=null).map(line=>{
+        const varColor = line.variance<0?'var(--red)':line.variance>0?'var(--orange)':'var(--green)';
+        const varText = (line.variance>0?'+':'')+line.variance.toFixed(2)+' '+line.unit;
+        const lossVal = line.variance<0?'₹'+Math.abs(line.variance*(line.lastCost||0)).toFixed(2):'—';
+        return `<tr>
+          <td><strong>${line.name}</strong></td>
+          <td><span class="badge badge-gray" style="font-size:10px;">${line.category}</span></td>
+          <td>${line.expected} ${line.unit}</td>
+          <td>${line.actual} ${line.unit}</td>
+          <td style="font-weight:600;color:${varColor};">${varText}</td>
+          <td style="color:var(--red);">${lossVal}</td>
+        </tr>`;}).join('')}
+      </tbody>
+    </table></div>`;
+  document.getElementById('st-view-modal').style.display='flex';
 }
 
 // ── Beer Inventory ────────────────────────────────────────────────────────────
