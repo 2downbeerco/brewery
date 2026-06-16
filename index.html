@@ -287,6 +287,7 @@ async function pullFromSupabase() {
     return changed;
   } catch(e) {
     console.warn('Supabase pull failed:', e.message);
+    setSyncStatus(false);
     return false;
   }
 }
@@ -2843,6 +2844,7 @@ function checkBrewPw() {
     document.getElementById('login-screen').style.display = 'none';
     document.getElementById('app').style.display = 'flex';
     document.getElementById('brew-pw-err').textContent = '';
+    pushToSupabase();
   } else {
     const err = document.getElementById('brew-pw-err');
     err.textContent = 'Incorrect password';
@@ -3188,8 +3190,9 @@ function saveBeer() {
   // Pull latest data from Supabase on load, then start polling
   pullFromSupabase().then(changed => {
     if (changed) { renderNav(); renderContent(); }
+    setSyncStatus(true);
     startSyncPoll();
-  });
+  }).catch(() => setSyncStatus(false));
 })();
 </script>
 </body>
