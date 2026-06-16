@@ -271,7 +271,7 @@ let _initialSyncDone = false;
 
 async function pullFromSupabase() {
   try {
-    const rows = await sbFetch('GET', '/rest/v1/brew_state?select=key,value');
+    const rows = await sbFetch('GET', '/rest/v1/brew_state?select=key,value,updated_at');
     if (!rows || !rows.length) return false;
     let changed = false;
     rows.forEach(row => {
@@ -280,16 +280,33 @@ async function pullFromSupabase() {
       const current = JSON.stringify(state[row.key]);
       if (fresh !== current) {
         state[row.key] = row.value;
+        localStorage.setItem('brew_' + row.key, JSON.stringify(row.value));
         changed = true;
       }
     });
-    if (changed) {
-      SYNC_KEYS.forEach(k => localStorage.setItem('brew_' + k, JSON.stringify(state[k])));
-    }
     setSyncStatus(true);
     return changed;
   } catch(e) {
     console.warn('Supabase pull failed:', e.message);
+    setSyncStatus(false);
+    return false;
+  }
+}
+
+// Pull and ALWAYS apply Supabase data — used on initial load
+async function pullFromSupabaseForce() {
+  try {
+    const rows = await sbFetch('GET', '/rest/v1/brew_state?select=key,value');
+    if (!rows || !rows.length) return false;
+    rows.forEach(row => {
+      if (!SYNC_KEYS.includes(row.key)) return;
+      state[row.key] = row.value;
+      localStorage.setItem('brew_' + row.key, JSON.stringify(row.value));
+    });
+    setSyncStatus(true);
+    return true;
+  } catch(e) {
+    console.warn('Supabase initial pull failed:', e.message);
     setSyncStatus(false);
     return false;
   }
@@ -3191,12 +3208,12 @@ function saveBeer() {
   setTimeout(() => { const pw = document.getElementById('brew-pw'); if (pw) pw.focus(); }, 100);
   renderNav(); renderContent();
   // Pull latest data from Supabase on load, then start polling
-  pullFromSupabase().then(changed => {
-    if (changed) { renderNav(); renderContent(); }
+  pullFromSupabaseForce().then(ok => {
+    if (ok) { renderNav(); renderContent(); }
     setSyncStatus(true);
     _initialSyncDone = true;
     startSyncPoll();
-  }).catch(() => setSyncStatus(false));
+  }).catch(() => { setSyncStatus(false); _initialSyncDone = true; startSyncPoll(); });
 })();
 </script>
 </body>
