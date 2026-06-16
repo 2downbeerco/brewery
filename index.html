@@ -475,7 +475,7 @@ function newBrewLog() {
     mashTemp: 66, mashTime: 60, boilTime: 60, yieldEst: '',
     ogTarget: '', fgTarget: '',
     // Ingredients: [{rmId, name, qty, unit}]
-    grains: [], hops: [], yeast: [], other: [],
+    grains: [], hops: [], yeast: [], other: [], boilAdd: [],
     mash: {
       cerealMash:   {enabled:false},
       bGlucanRest:  {enabled:false},
@@ -484,7 +484,7 @@ function newBrewLog() {
       sacchRest:    {enabled:true, temp:66, duration:60},
       mashOut:      {enabled:true, temp:78, duration:10},
     },
-    checks: {},
+    checks: {}, execution: {},
     status: 'Draft', inventoryDeducted: false,
   };
   state.brewLogs.push(log);
@@ -615,6 +615,80 @@ function renderBrewDetail(id) {
     }).join('') + (canEdit?`<button class="btn btn-ghost btn-sm" style="margin-top:4px;" onclick="addIng('${section}','${cats?cats[0]:''}')">+ Add</button>`:'');
   }
 
+  // ── Hops rows with t= timing field ───────────────────────────────────────
+  function ingRowsHops(section, items) {
+    const rmList = state.rawMaterials.filter(r=>r.category==='Hops');
+    const rmOpts = rmList.map(r=>`<option value="${r.id}">${r.name}</option>`).join('');
+    if (!canEdit && items.length===0) return '<div style="color:var(--muted);font-size:13px;">None specified</div>';
+    return items.map((ing,idx)=>{
+      const rm = state.rawMaterials.find(r=>r.id==ing.rmId);
+      const batches = rm ? getBatches(rm.id) : [];
+      const picked = batches.find(b=>b.batchNo===ing.batchNo) || batches[0] || null;
+      const batchOpts = batches.map(b=>`<option value="${b.batchNo}" ${ing.batchNo===b.batchNo?'selected':''}>${b.batchNo}${b.deliveryDate?' ('+fmtDate(b.deliveryDate)+')':''}</option>`).join('');
+      if (!canEdit) {
+        return `<div style="padding:9px 0;border-bottom:1px solid var(--border);">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+            <span style="font-size:14px;font-weight:600;">${ing.name||'—'}</span>
+            <span style="font-size:13px;color:var(--muted);">${ing.qty||0} ${ing.unit||'kg'} · t=${ing.tMin!=null?ing.tMin:'—'} min</span>
+          </div>
+          ${ing.batchNo?`<div style="font-size:12px;color:var(--muted);margin-top:3px;">Batch: <strong>${ing.batchNo}</strong>${ing.alphaAcid!=null?' · AA: <strong>'+ing.alphaAcid+'%</strong>':''}</div>`:''}
+        </div>`;
+      }
+      return `<div style="background:var(--bg);border-radius:8px;padding:10px;margin-bottom:8px;">
+        <div style="display:grid;grid-template-columns:1fr 70px 60px 60px 24px;gap:6px;align-items:center;margin-bottom:6px;">
+          <select class="inp inp-sm" onchange="updateIng('${section}',${idx},'rmId',this.value);updateIngUnit('${section}',${idx},this)">
+            <option value="">— select —</option>
+            ${rmOpts.replace(`value="${ing.rmId}"`,`value="${ing.rmId}" selected`)}
+          </select>
+          <input class="inp inp-sm" type="number" step="0.001" value="${ing.qty||''}" placeholder="qty"
+            onchange="updateIng('${section}',${idx},'qty',+this.value)">
+          <input class="inp inp-sm" value="${ing.unit||'kg'}" placeholder="kg"
+            onchange="updateIng('${section}',${idx},'unit',this.value)">
+          <input class="inp inp-sm" type="number" value="${ing.tMin!=null?ing.tMin:''}" placeholder="t="
+            title="Addition time: t=60 = start of boil, t=0 = flameout"
+            onchange="updateIng('${section}',${idx},'tMin',+this.value)">
+          <button class="del-btn" onclick="removeIng('${section}',${idx})">✕</button>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+          ${batches.length>0
+            ? `<select class="inp inp-sm" style="flex:1;min-width:160px;" onchange="selectIngBatch('${section}',${idx},this.value)">${batchOpts}</select>`
+            : `<input class="inp inp-sm" style="flex:1;min-width:160px;" value="${ing.batchNo||rm?.lastBatchNo||''}" placeholder="Batch no."
+                onchange="updateIng('${section}',${idx},'batchNo',this.value)">`}
+          ${picked?.alphaAcid!=null?`<span style="font-size:11px;color:var(--muted);">AA: <strong>${picked.alphaAcid}%</strong></span>`:''}
+        </div>
+      </div>`;
+    }).join('') + (canEdit?`<button class="btn btn-ghost btn-sm" style="margin-top:4px;" onclick="addIng('hops','Hops')">+ Add Hop</button>`:'');
+  }
+
+  // ── Boil additions (adjuncts added during boil) ───────────────────────────
+  function ingRowsBoilAdd(section, items) {
+    const rmList = state.rawMaterials.filter(r=>['Adjuncts','Salts++','Other'].includes(r.category));
+    const rmOpts = rmList.map(r=>`<option value="${r.id}">${r.name}</option>`).join('');
+    if (!canEdit && items.length===0) return '<div style="color:var(--muted);font-size:13px;">None specified</div>';
+    return items.map((ing,idx)=>{
+      if (!canEdit) {
+        return `<div style="padding:9px 0;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;">
+          <span style="font-size:14px;font-weight:600;">${ing.name||'—'}</span>
+          <span style="font-size:13px;color:var(--muted);">${ing.qty||0} ${ing.unit||''} · t=${ing.tMin!=null?ing.tMin:'—'} min</span>
+        </div>`;
+      }
+      return `<div style="background:var(--bg);border-radius:8px;padding:10px;margin-bottom:8px;">
+        <div style="display:grid;grid-template-columns:1fr 70px 60px 60px 24px;gap:6px;align-items:center;">
+          <input class="inp inp-sm" value="${ing.name||''}" placeholder="e.g. Basil, Coriander"
+            onchange="updateBoilAdd(${id},${idx},'name',this.value)">
+          <input class="inp inp-sm" type="number" step="0.01" value="${ing.qty||''}" placeholder="qty"
+            onchange="updateBoilAdd(${id},${idx},'qty',+this.value)">
+          <input class="inp inp-sm" value="${ing.unit||'g'}" placeholder="g/kg"
+            onchange="updateBoilAdd(${id},${idx},'unit',this.value)">
+          <input class="inp inp-sm" type="number" value="${ing.tMin!=null?ing.tMin:''}" placeholder="t="
+            title="t=60 = start of boil, t=0 = flameout"
+            onchange="updateBoilAdd(${id},${idx},'tMin',+this.value)">
+          <button class="del-btn" onclick="removeBoilAdd(${id},${idx})">✕</button>
+        </div>
+      </div>`;
+    }).join('') + (canEdit?`<button class="btn btn-ghost btn-sm" style="margin-top:4px;" onclick="addBoilAdd(${id})">+ Add</button>`:'');
+  }
+
   // ── Mash step row builder ─────────────────────────────────────────────────
   function mashStep(key, label, hasExtras) {
     const step = log.mash?.[key] || {};
@@ -683,33 +757,222 @@ function renderBrewDetail(id) {
       <div class="brew-section-title">Stock Availability Check</div>${rows}</div>` : '';
   }
 
-  // ── In Progress execution checklist ──────────────────────────────────────
+  // ── In Progress: full brew day execution log ─────────────────────────────
   function ipChecklist() {
-    const checks = log.checks || {};
-    const items = [
-      {k:'mill',       label:'Grain milled'},
-      {k:'mashIn',     label:'Mash in complete'},
-      {k:'lauter',     label:'Lautering complete'},
-      {k:'boil',       label:'Boil complete'},
-      {k:'chill',      label:'Wort chilled'},
-      {k:'transfer',   label:'Transferred to fermenter'},
-      {k:'yeastPitch', label:'Yeast pitched'},
-      {k:'og',         label:'OG measured'},
-    ];
-    return `<div class="brew-section" style="grid-column:1/-1;">
-      <div class="brew-section-title">Brew Day Checklist</div>
-      ${items.map(item=>`
-        <div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--border);">
-          <input type="checkbox" ${checks[item.k]?'checked':''} onchange="updateBrewCheck(${id},'${item.k}',this.checked)"
+    const ex = log.execution || {};
+
+    // Helper: step card
+    function stepCard(icon, title, done, content) {
+      return `<div style="border:1.5px solid ${done?'var(--green)':'var(--border)'};border-radius:10px;padding:16px;margin-bottom:14px;background:var(--surface);">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:${content?'14px':'0'};">
+          <input type="checkbox" ${done?'checked':''} onchange="toggleExStep(${id},'${title.replace(/[^a-zA-Z0-9]/g,'_')}',this.checked)"
             style="width:18px;height:18px;accent-color:var(--green);cursor:pointer;flex-shrink:0;">
-          <span style="font-size:14px;font-weight:500;${checks[item.k]?'text-decoration:line-through;color:var(--muted);':''}">${item.label}</span>
-          ${item.k==='og'?`<input class="inp inp-sm" style="width:90px;margin-left:auto;" value="${log.ogActual||''}" placeholder="e.g. 1.058"
-            onchange="updateLog(${id},'ogActual',this.value)">`:
-          item.k==='transfer'?`<select class="inp inp-sm" style="width:120px;margin-left:auto;" onchange="updateLog(${id},'tank',this.value)">
-            <option value="">Tank</option>
-            ${state.tanks.filter(t=>t.stage==='Empty'||t.id===log.tank).map(t=>`<option value="${t.id}" ${log.tank===t.id?'selected':''}>${t.name}</option>`).join('')}
-          </select>`:''}
+          <span style="font-size:14px;font-weight:700;${done?'color:var(--green)':''}">${icon} ${title}</span>
+          ${done?'<span style="margin-left:auto;font-size:18px;">✅</span>':''}
+        </div>
+        ${content||''}
+      </div>`;
+    }
+    function tf(key, label, placeholder) {
+      return `<div><label class="lbl" style="font-size:10px;">${label}</label>
+        <input class="inp inp-sm" value="${ex[key]||''}" placeholder="${placeholder||''}"
+          onchange="updateExField(${id},'${key}',this.value)"></div>`;
+    }
+    function tn(key, label, placeholder, step) {
+      return `<div><label class="lbl" style="font-size:10px;">${label}</label>
+        <input class="inp inp-sm" type="number" step="${step||'0.01'}" value="${ex[key]||''}" placeholder="${placeholder||''}"
+          onchange="updateExField(${id},'${key}',+this.value)"></div>`;
+    }
+    function startEnd(startKey, endKey) {
+      return `<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+        ${tf(startKey,'Start Time','HH:MM')} ${tf(endKey,'End Time','HH:MM')}
+      </div>`;
+    }
+
+    // ── Step 1: Grain Weighing ──────────────────────────────────────────────
+    const s1 = stepCard('⚖️','Grain Weighing', ex.grainWeighDone, `
+      <div style="font-size:12px;color:var(--muted);margin-bottom:8px;">Target quantities from recipe:</div>
+      ${(log.grains||[]).map((g,i)=>`
+        <div style="display:grid;grid-template-columns:1fr 80px 80px;gap:8px;align-items:center;margin-bottom:6px;">
+          <div style="font-size:13px;font-weight:600;">${g.name||'—'}</div>
+          <div style="font-size:12px;color:var(--muted);">Target: ${g.qty||0} ${g.unit||'kg'}</div>
+          ${tn('grainActual_'+i,'Actual ('+( g.unit||'kg')+')',g.qty||'','0.01')}
         </div>`).join('')}
+      <div style="margin-top:10px;">${tf('grainWeighNote','Notes / Variance','Any substitution or adjustment...')}</div>`
+    );
+
+    // ── Step 2: Milling ────────────────────────────────────────────────────
+    const s2 = stepCard('⚙️','Milling', ex.millingDone, `
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+        ${tf('millSetting','Mill Gap Setting','e.g. 0.8mm')}
+        ${tf('millNote','Notes','')}
+      </div>`
+    );
+
+    // ── Step 3: Mash ──────────────────────────────────────────────────────
+    const mashSteps = ['cerealMash','bGlucanRest','proteinRest','bAmylaseRest','sacchRest','mashOut'];
+    const mashLabels = {'cerealMash':'Cereal Mash','bGlucanRest':'β-Glucan Rest','proteinRest':'Protein Rest',
+      'bAmylaseRest':'β-Amylase Rest','sacchRest':'Saccharification Rest','mashOut':'Mash Out'};
+    const mashRows = mashSteps.filter(k=>log.mash?.[k]?.enabled).map(k=>{
+      const recipe = log.mash[k];
+      return `<div style="background:var(--bg);border-radius:8px;padding:10px;margin-bottom:8px;">
+        <div style="font-size:13px;font-weight:700;margin-bottom:8px;">${mashLabels[k]}
+          <span style="font-size:11px;font-weight:400;color:var(--muted);margin-left:8px;">Recipe: ${recipe.temp||'—'}°C · ${recipe.duration||'—'} min</span>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:6px;">
+          ${tf('mash_'+k+'_start','Start Time','HH:MM')}
+          ${tf('mash_'+k+'_end','End Time','HH:MM')}
+          ${tn('mash_'+k+'_tempActual','Actual Temp (°C)',recipe.temp||'','0.1')}
+          ${tn('mash_'+k+'_pH','pH Reading','5.2','0.01')}
+        </div>
+        <div style="margin-top:8px;display:grid;grid-template-columns:1fr 1fr;gap:6px;">
+          ${tf('mash_'+k+'_pHAdj','pH Adjustment (salt/acid added)','')}
+          ${tf('mash_'+k+'_note','Notes','')}
+        </div>
+      </div>`;
+    }).join('');
+
+    const s3 = stepCard('🌡️','Mash', ex.mashDone, `
+      <!-- Strike water actual -->
+      <div style="background:var(--bg);border-radius:8px;padding:10px;margin-bottom:10px;">
+        <div style="font-size:13px;font-weight:700;margin-bottom:8px;">Strike Water</div>
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;">
+          ${tn('strikeVol1Actual','Vol Stage 1 (L)',log.strikeVol1||'','0.1')}
+          ${tn('strikeTemp1Actual','Temp Stage 1 (°C)',log.strikeTemp1||'','0.1')}
+          ${log.mash?.cerealMash?.enabled?tn('strikeVol2Actual','Vol Stage 2 (L)',log.strikeVol2||'','0.1'):'<div></div>'}
+        </div>
+      </div>
+      ${mashRows||'<div style="font-size:13px;color:var(--muted);">No mash steps enabled in Draft.</div>'}
+      <div style="background:var(--bg);border-radius:8px;padding:10px;margin-top:4px;">
+        <div style="font-size:12px;font-weight:700;margin-bottom:6px;">Mash In pH & Mash Out pH</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+          ${tn('mashInPHActual','Mash In pH (actual)',log.mashInPH||'','0.01')}
+          ${tn('mashOutPHActual','Mash Out pH (actual)',log.mashOutPH||'','0.01')}
+        </div>
+        <div style="margin-top:8px;">${tf('mashPHAdjNote','pH adjustment notes','')}</div>
+      </div>`
+    );
+
+    // ── Step 4: Lautering ─────────────────────────────────────────────────
+    const s4 = stepCard('🚿','Lautering', ex.lauterDone, `
+      ${startEnd('lauterStart','lauterEnd')}
+      <div style="margin-top:8px;">${tf('lauterNote','Notes','')}</div>`
+    );
+
+    // ── Step 5: Recirculation ─────────────────────────────────────────────
+    const s5 = stepCard('🔄','Recirculation (Vorlauf)', ex.recircDone, `
+      ${startEnd('recircStart','recircEnd')}
+      <div style="margin-top:8px;">${tf('recircNote','Notes','')}</div>`
+    );
+
+    // ── Step 6: Wort Transfer to Boil Kettle + Sparging ───────────────────
+    const spargeSamples = ex.spargeSamples || [{}];
+    const transferSamples = ex.transferSamples || [{}];
+    const s6 = stepCard('🪣','Wort Transfer to Boil Kettle', ex.transferKettleDone, `
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px;">
+        ${tf('transferKettleStart','Transfer Start Time','HH:MM')}
+        ${tn('transferKettleStartGravity','Gravity at Start','1.050','0.001')}
+      </div>
+      <!-- Running samples -->
+      <div style="font-size:12px;font-weight:700;margin-bottom:6px;">Running Samples (every 15 min)</div>
+      <div id="transfer-samples-${id}">
+        ${transferSamples.map((s,i)=>`
+          <div style="display:grid;grid-template-columns:60px 80px 80px 1fr 24px;gap:6px;align-items:center;margin-bottom:6px;">
+            ${tf('transferSample_'+i+'_time','Time','HH:MM')}
+            ${tn('transferSample_'+i+'_vol','Vol in Kettle (L)','','1')}
+            ${tn('transferSample_'+i+'_gravity','Gravity','1.050','0.001')}
+            ${tf('transferSample_'+i+'_note','Note','')}
+            <button class="del-btn" onclick="removeExSample(${id},'transferSamples',${i})">✕</button>
+          </div>`).join('')}
+      </div>
+      <button class="btn btn-ghost btn-sm" onclick="addExSample(${id},'transferSamples')">+ Sample</button>
+      <!-- Sparging -->
+      <div style="background:var(--bg);border-radius:8px;padding:10px;margin-top:10px;margin-bottom:10px;">
+        <div style="font-size:12px;font-weight:700;margin-bottom:6px;">Sparging</div>
+        ${spargeSamples.map((s,i)=>`
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr 24px;gap:6px;align-items:center;margin-bottom:6px;">
+            ${tf('sparge_'+i+'_time','Time','HH:MM')}
+            ${tn('sparge_'+i+'_vol','Sparge Liquor (L)','','0.1')}
+            ${tf('sparge_'+i+'_note','Note','')}
+            <button class="del-btn" onclick="removeExSample(${id},'spargeSamples',${i})">✕</button>
+          </div>`).join('')}
+        <button class="btn btn-ghost btn-sm" onclick="addExSample(${id},'spargeSamples')">+ Sparge</button>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;">
+        ${tf('transferKettleEnd','Transfer End Time','HH:MM')}
+        ${tn('finalRunGravity','Final Run Gravity','1.010','0.001')}
+        ${tf('transferKettleNote','Notes','')}
+      </div>`
+    );
+
+    // ── Step 7: Boil ──────────────────────────────────────────────────────
+    const hopAdditions = (log.hops||[]).map((h,i)=>`
+      <div style="display:grid;grid-template-columns:1fr 60px 80px 80px;gap:6px;align-items:center;margin-bottom:6px;">
+        <div style="font-size:13px;font-weight:600;">${h.name||'Hop '+(i+1)} <span style="font-size:11px;color:var(--muted);">${h.batchNo?'('+h.batchNo+')':''}</span></div>
+        ${tf('hop_'+i+'_t','t= (min)','60')}
+        ${tn('hop_'+i+'_qty','Qty ('+( h.unit||'kg')+')',h.qty||'','0.001')}
+        ${tf('hop_'+i+'_actualTime','Actual Time','HH:MM')}
+      </div>`).join('');
+    const boilAdds = (log.boilAdd||[]).map((a,i)=>`
+      <div style="display:grid;grid-template-columns:1fr 80px 80px;gap:6px;align-items:center;margin-bottom:6px;">
+        <div style="font-size:13px;font-weight:600;">${a.name||'Addition '+(i+1)}</div>
+        ${tf('boilAdd_'+i+'_t','t= (min)','0')}
+        ${tf('boilAdd_'+i+'_actualTime','Actual Time','HH:MM')}
+      </div>`).join('');
+    const s7 = stepCard('🔥','Boil', ex.boilDone, `
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:10px;">
+        ${tf('boilStart','Boil Start Time','HH:MM')}
+        ${tn('preboilGravity','Pre-boil Gravity','1.040','0.001')}
+        ${tn('preboilPH','Pre-boil pH','5.4','0.01')}
+      </div>
+      ${hopAdditions?`<div style="font-size:12px;font-weight:700;margin-bottom:6px;">Hop Additions</div>${hopAdditions}`:''}
+      ${boilAdds?`<div style="font-size:12px;font-weight:700;margin:8px 0 6px;">Boil Additions</div>${boilAdds}`:''}
+      <div style="margin-top:8px;">
+        ${tf('boilEnd','Boil End Time','HH:MM')}
+      </div>`
+    );
+
+    // ── Step 8: Whirlpool ─────────────────────────────────────────────────
+    const s8 = stepCard('🌀','Whirlpool', ex.whirlpoolDone, `
+      <div style="font-size:12px;color:var(--muted);margin-bottom:8px;">Transfer to Whirlpool Kettle</div>
+      ${startEnd('wpTransferStart','wpTransferEnd')}
+      <div style="font-size:12px;color:var(--muted);margin:10px 0 6px;">Whirlpool Process</div>
+      ${startEnd('wpStart','wpEnd')}
+      <div style="margin-top:8px;">${tf('wpNote','Notes','')}</div>`
+    );
+
+    // ── Step 9: Transfer to FV ────────────────────────────────────────────
+    const s9 = stepCard('🛢️','Transfer to Fermenter', ex.fvTransferDone, `
+      ${startEnd('fvTransferStart','fvTransferEnd')}
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px;">
+        <div class="form-group"><label class="lbl" style="font-size:10px;">Target Tank</label>
+          <select class="inp inp-sm" onchange="updateExField(${id},'fvTank',this.value)">
+            <option value="">— select —</option>
+            ${state.tanks.filter(t=>t.stage==='Empty'||t.id===ex.fvTank).map(t=>`<option value="${t.id}" ${ex.fvTank===t.id?'selected':''}>${t.name}</option>`).join('')}
+          </select>
+        </div>
+        ${tf('o2Setting','Oxygen Setting','e.g. 1.0 LPM')}
+      </div>
+      <div style="margin-top:8px;">${tf('fvNote','Notes','')}</div>`
+    );
+
+    // ── Step 10: Yeast Pitch ───────────────────────────────────────────────
+    const s10 = stepCard('🧫','Yeast Pitch', ex.yeastPitchDone, `
+      <div style="font-size:12px;color:var(--muted);margin-bottom:8px;">
+        Recipe: ${log.yeastForm==='dry'?'Dried':'Rehydrated/Slurry'} · 
+        ${(log.yeast||[]).map(y=>y.name+(y.qty?' ('+y.qty+' '+y.unit+')':'')).join(', ')||'—'}
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;">
+        ${tf('yeastPitchTime','Pitch Time','HH:MM')}
+        ${tn('pitchTempActual','Wort Temp at Pitch (°C)','20','0.1')}
+        ${tn('ogActual','OG (actual)','1.058','0.001')}
+      </div>
+      <div style="margin-top:8px;">${tf('yeastNote','Notes / rehydration details','')}</div>`
+    );
+
+    return `<div style="grid-column:1/-1;">
+      <div style="font-size:15px;font-weight:700;margin-bottom:16px;">🗓️ Brew Day Execution</div>
+      ${s1}${s2}${s3}${s4}${s5}${s6}${s7}${s8}${s9}${s10}
     </div>`;
   }
 
@@ -784,18 +1047,31 @@ function renderBrewDetail(id) {
       </div>
 
       <div class="brew-section">
-        <div class="brew-section-title">🌿 Hops</div>
-        ${ingRows('hops', log.hops, ['Hops'])}
+        <div class="brew-section-title">🌿 Hops <span style="font-size:10px;font-weight:400;color:var(--muted);">(boil time = 60 min; t=60 is start of boil)</span></div>
+        ${ingRowsHops('hops', log.hops)}
       </div>
 
       <div class="brew-section">
         <div class="brew-section-title">🧫 Yeast</div>
+        <div class="form-group" style="margin-bottom:10px;">
+          <label class="lbl">Yeast Form</label>
+          <select class="inp inp-sm" style="max-width:200px;" ${!canEdit?'disabled':''} onchange="updateLog(${id},'yeastForm',this.value)">
+            <option value="dry" ${log.yeastForm==='dry'?'selected':''}>Dried</option>
+            <option value="rehydrated" ${log.yeastForm==='rehydrated'?'selected':''}>Rehydrated</option>
+            <option value="slurry" ${log.yeastForm==='slurry'?'selected':''}>Slurry</option>
+          </select>
+        </div>
         ${ingRows('yeast', log.yeast, ['Yeast'])}
       </div>
 
       <div class="brew-section">
         <div class="brew-section-title">⚗️ Adjuncts / Salts++</div>
         ${ingRows('other', log.other, ['Salts++','Adjuncts','Gases'])}
+      </div>
+
+      <div class="brew-section">
+        <div class="brew-section-title">🫙 Boil Additions <span style="font-size:10px;font-weight:400;color:var(--muted);">(adjuncts added during boil)</span></div>
+        ${ingRowsBoilAdd('boilAdd', log.boilAdd||[])}
       </div>
 
       <!-- ── MASH PROCESS PARAMETERS ── -->
@@ -811,6 +1087,37 @@ function renderBrewDetail(id) {
             ${mashStep('mashOut',         'Mash Out', false)}
           </div>
           <div>
+            <!-- Strike Water -->
+            <div style="background:var(--bg);border-radius:8px;padding:10px 12px;margin-bottom:8px;">
+              <div style="font-size:13px;font-weight:700;margin-bottom:8px;color:var(--text);">Strike Water</div>
+              ${(log.mash?.cerealMash?.enabled)?`
+              <div style="font-size:11px;color:var(--accent);font-weight:600;margin-bottom:6px;">Cereal Mash — 2 stages</div>
+              <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:8px;">
+                <div><label class="lbl" style="font-size:10px;">Stage 1 Vol (L)</label>
+                  <input class="inp inp-sm" type="number" step="0.1" value="${log.strikeVol1||''}" ${!canEdit?'disabled':''}
+                    onchange="updateLog(${id},'strikeVol1',+this.value)"></div>
+                <div><label class="lbl" style="font-size:10px;">Stage 1 Temp (°C)</label>
+                  <input class="inp inp-sm" type="number" step="0.5" value="${log.strikeTemp1||''}" ${!canEdit?'disabled':''}
+                    onchange="updateLog(${id},'strikeTemp1',+this.value)"></div>
+                <div></div>
+                <div><label class="lbl" style="font-size:10px;">Stage 2 Vol (L)</label>
+                  <input class="inp inp-sm" type="number" step="0.1" value="${log.strikeVol2||''}" ${!canEdit?'disabled':''}
+                    onchange="updateLog(${id},'strikeVol2',+this.value)"></div>
+                <div><label class="lbl" style="font-size:10px;">Stage 2 Temp (°C)</label>
+                  <input class="inp inp-sm" type="number" step="0.5" value="${log.strikeTemp2||''}" ${!canEdit?'disabled':''}
+                    onchange="updateLog(${id},'strikeTemp2',+this.value)"></div>
+                <div><label class="lbl" style="font-size:10px;">Added before</label>
+                  <input class="inp inp-sm" value="β-Amylase Rest" disabled style="color:var(--muted);"></div>
+              </div>`:`
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
+                <div><label class="lbl" style="font-size:10px;">Volume (L)</label>
+                  <input class="inp inp-sm" type="number" step="0.1" value="${log.strikeVol1||''}" ${!canEdit?'disabled':''}
+                    onchange="updateLog(${id},'strikeVol1',+this.value)"></div>
+                <div><label class="lbl" style="font-size:10px;">Temperature (°C)</label>
+                  <input class="inp inp-sm" type="number" step="0.5" value="${log.strikeTemp1||''}" ${!canEdit?'disabled':''}
+                    onchange="updateLog(${id},'strikeTemp1',+this.value)"></div>
+              </div>`}
+            </div>
             <!-- Boil -->
             <div style="background:var(--bg);border-radius:8px;padding:10px 12px;margin-bottom:8px;">
               <div style="font-size:13px;font-weight:700;margin-bottom:8px;color:var(--text);">Boil</div>
@@ -857,6 +1164,60 @@ function renderBrewDetail(id) {
     </div>`:''}
   `;
 }
+
+function updateBoilAdd(id, idx, field, val) {
+  const i = state.brewLogs.findIndex(b=>b.id===id);
+  if (i<0) return;
+  if (!state.brewLogs[i].boilAdd) state.brewLogs[i].boilAdd = [];
+  state.brewLogs[i].boilAdd[idx][field] = val;
+  saveState();
+}
+function addBoilAdd(id) {
+  const i = state.brewLogs.findIndex(b=>b.id===id);
+  if (i<0) return;
+  if (!state.brewLogs[i].boilAdd) state.brewLogs[i].boilAdd = [];
+  state.brewLogs[i].boilAdd.push({name:'',qty:0,unit:'g',tMin:60});
+  saveState(); renderContent();
+}
+function removeBoilAdd(id, idx) {
+  const i = state.brewLogs.findIndex(b=>b.id===id);
+  if (i<0) return;
+  state.brewLogs[i].boilAdd.splice(idx,1);
+  saveState(); renderContent();
+}
+
+function updateExField(id, key, val) {
+  const i = state.brewLogs.findIndex(b=>b.id===id);
+  if (i<0) return;
+  if (!state.brewLogs[i].execution) state.brewLogs[i].execution = {};
+  state.brewLogs[i].execution[key] = val;
+  saveState();
+}
+
+function toggleExStep(id, stepKey, val) {
+  const i = state.brewLogs.findIndex(b=>b.id===id);
+  if (i<0) return;
+  if (!state.brewLogs[i].execution) state.brewLogs[i].execution = {};
+  state.brewLogs[i].execution[stepKey] = val;
+  saveState(); renderContent();
+}
+
+function addExSample(id, sampleKey) {
+  const i = state.brewLogs.findIndex(b=>b.id===id);
+  if (i<0) return;
+  if (!state.brewLogs[i].execution) state.brewLogs[i].execution = {};
+  if (!state.brewLogs[i].execution[sampleKey]) state.brewLogs[i].execution[sampleKey] = [];
+  state.brewLogs[i].execution[sampleKey].push({});
+  saveState(); renderContent();
+}
+
+function removeExSample(id, sampleKey, idx) {
+  const i = state.brewLogs.findIndex(b=>b.id===id);
+  if (i<0) return;
+  state.brewLogs[i].execution[sampleKey].splice(idx, 1);
+  saveState(); renderContent();
+}
+
 
 function updateMashStep(id, stepKey, field, val) {
   const i = state.brewLogs.findIndex(b=>b.id===id);
