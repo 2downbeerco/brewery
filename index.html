@@ -1297,28 +1297,57 @@ function renderPOItems(){
   const unitOpts = UNIT_OPTIONS.map(u=>`<option value="${u}">${u}</option>`).join('');
   // datalist of existing RM names for autocomplete
   const rmDatalist = `<datalist id="rm-names-list">${state.rawMaterials.map(r=>`<option value="${r.name}">`).join('')}</datalist>`;
-  document.getElementById('po-items-list').innerHTML = rmDatalist + _poItems.map((item,idx)=>`
-    <div style="display:grid;grid-template-columns:1.8fr 1fr 90px 90px 80px 80px 28px;gap:6px;margin-bottom:8px;align-items:center;">
-      <input class="inp inp-sm" value="${item.name||''}" placeholder="Type or pick existing item"
-        list="rm-names-list"
-        oninput="_poItems[${idx}].name=this.value;autofillPOItem(${idx},this.value)">
-      <select class="inp inp-sm" id="po-cat-${idx}" onchange="_poItems[${idx}].category=this.value">
-        ${catOpts.replace(`value="${item.category||'Malt'}"`,`value="${item.category||'Malt'}" selected`)}
-      </select>
-      <select class="inp inp-sm" id="po-unit-${idx}" onchange="_poItems[${idx}].unit=this.value">
-        ${unitOpts.replace(`value="${item.unit||'kg'}"`,`value="${item.unit||'kg'}" selected`)}
-      </select>
-      <input class="inp inp-sm" type="number" value="${item.qty||''}" placeholder="Qty"
-        oninput="_poItems[${idx}].qty=+this.value;updatePOTotals()">
-      <input class="inp inp-sm" type="number" value="${item.unitCost||''}" placeholder="₹" step="0.01"
-        oninput="_poItems[${idx}].unitCost=+this.value;updatePOTotals()">
-      <input class="inp inp-sm" type="number" value="${item.gst!=null?item.gst:18}" placeholder="%"
-        oninput="_poItems[${idx}].gst=+this.value;updatePOTotals()">
-      <button class="del-btn" onclick="removePOItem(${idx})">✕</button>
-    </div>
-    <div style="font-size:11px;color:var(--muted);margin-bottom:10px;padding-left:2px;">
-      Subtotal incl. GST: <strong>₹${((item.qty||0)*(item.unitCost||0)*(1+(item.gst||0)/100)).toFixed(2)}</strong>
-    </div>`).join('');
+  document.getElementById('po-items-list').innerHTML = rmDatalist + _poItems.map((item,idx)=>{
+    const isMalt = (item.category||'Malt') === 'Malt';
+    const isHops = (item.category||'') === 'Hops';
+    const extraField = isMalt
+      ? `<div class="form-group" style="margin:0;">
+           <label class="lbl" style="font-size:10px;">Extract LDK</label>
+           <input class="inp inp-sm" type="number" step="0.1" value="${item.extractLdk||''}" placeholder="e.g. 82.5"
+             oninput="_poItems[${idx}].extractLdk=+this.value">
+         </div>`
+      : isHops
+      ? `<div class="form-group" style="margin:0;">
+           <label class="lbl" style="font-size:10px;">Alpha Acid (%)</label>
+           <input class="inp inp-sm" type="number" step="0.1" value="${item.alphaAcid||''}" placeholder="e.g. 12.5"
+             oninput="_poItems[${idx}].alphaAcid=+this.value">
+         </div>`
+      : `<div></div>`;
+    return `
+    <div style="border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:10px;">
+      <!-- Row 1: main fields -->
+      <div style="display:grid;grid-template-columns:1.8fr 1fr 90px 90px 80px 80px 28px;gap:6px;align-items:center;margin-bottom:8px;">
+        <input class="inp inp-sm" value="${item.name||''}" placeholder="Type or pick existing item"
+          list="rm-names-list"
+          oninput="_poItems[${idx}].name=this.value;autofillPOItem(${idx},this.value)">
+        <select class="inp inp-sm" id="po-cat-${idx}" onchange="_poItems[${idx}].category=this.value;renderPOItems()">
+          ${catOpts.replace(`value="${item.category||'Malt'}"`,`value="${item.category||'Malt'}" selected`)}
+        </select>
+        <select class="inp inp-sm" id="po-unit-${idx}" onchange="_poItems[${idx}].unit=this.value">
+          ${unitOpts.replace(`value="${item.unit||'kg'}"`,`value="${item.unit||'kg'}" selected`)}
+        </select>
+        <input class="inp inp-sm" type="number" value="${item.qty||''}" placeholder="Qty"
+          oninput="_poItems[${idx}].qty=+this.value;updatePOTotals()">
+        <input class="inp inp-sm" type="number" value="${item.unitCost||''}" placeholder="₹" step="0.01"
+          oninput="_poItems[${idx}].unitCost=+this.value;updatePOTotals()">
+        <input class="inp inp-sm" type="number" value="${item.gst!=null?item.gst:18}" placeholder="%"
+          oninput="_poItems[${idx}].gst=+this.value;updatePOTotals()">
+        <button class="del-btn" onclick="removePOItem(${idx})">✕</button>
+      </div>
+      <!-- Row 2: batch no + category-specific field + subtotal -->
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;align-items:end;">
+        <div class="form-group" style="margin:0;">
+          <label class="lbl" style="font-size:10px;">Batch No.</label>
+          <input class="inp inp-sm" value="${item.batchNo||''}" placeholder="e.g. B2025-06"
+            oninput="_poItems[${idx}].batchNo=this.value">
+        </div>
+        ${extraField}
+        <div style="font-size:12px;color:var(--muted);text-align:right;padding-bottom:2px;">
+          Subtotal incl. GST:<br><strong style="font-size:14px;color:var(--text);">₹${((item.qty||0)*(item.unitCost||0)*(1+(item.gst||0)/100)).toFixed(2)}</strong>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
 }
 
 function autofillPOItem(idx, typedName) {
@@ -1395,6 +1424,9 @@ function savePO(){
     }
     const r=state.rawMaterials[i];
     r.lastCost=item.unitCost||0;
+    if(item.batchNo) r.lastBatchNo=item.batchNo;
+    if(item.extractLdk) r.extractLdk=item.extractLdk;
+    if(item.alphaAcid) r.alphaAcid=item.alphaAcid;
     if(r.category==='Malt'){
       r.warehouseStock=(r.warehouseStock||0)+item.qty;
       r.stock=(r.warehouseStock)+(r.breweryStock||0);
