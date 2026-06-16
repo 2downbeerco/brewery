@@ -622,8 +622,8 @@ function renderBrewDetail(id) {
 
       <!-- Other / Adjuncts -->
       <div class="brew-section">
-        <div class="brew-section-title">⚗️ Other (Water Chem, Adjuncts, CO2)</div>
-        ${ingRows('other', log.other, ['Water Chem','Adjuncts','Gases','Cleaning'])}
+        <div class="brew-section-title">⚗️ Other (Salts++, Adjuncts, CO2)</div>
+        ${ingRows('other', log.other, ['Salts++','Adjuncts','Gases','Cleaning'])}
       </div>
 
       <!-- Process parameters -->
@@ -915,11 +915,30 @@ function renderRMInventory() {
   const cats=['All',...new Set(state.rawMaterials.map(r=>r.category))];
   const filter=window._rmFilter||'All';
   const items=filter==='All'?state.rawMaterials:state.rawMaterials.filter(r=>r.category===filter);
-  const low=state.rawMaterials.filter(r=>{const {total}=rmStatus(r);return total<=r.reorder;});
+  const low=state.rawMaterials.filter(r=>{const {total}=rmStatus(r);return total<=r.reorder&&r.reorder>0;});
+
+  const isAll = filter==='All';
+  const isMaltTab = filter==='Malt';
+  const isHopsTab = filter==='Hops';
+  const isCatTab  = !isAll;
+
+  // Total inventory cost — filtered by current tab
+  const costItems = isAll ? state.rawMaterials : items;
+  const totalCost = costItems.reduce((s,r)=>{
+    const {total}=rmStatus(r);
+    return s + (total*(r.lastCost||0));
+  },0);
+  const tickerLabel = isAll ? 'Total Inventory Value' : `${filter} Inventory Value`;
 
   return `
     ${low.length?`<div style="background:#FEF3C7;border:1px solid #F59E0B;border-radius:10px;padding:12px 16px;margin-bottom:18px;font-size:13px;color:#92400E;">
       ⚠️ <strong>${low.length} item${low.length>1?'s':''}</strong> at or below reorder level: ${low.map(r=>r.name).join(', ')}</div>`:''}
+
+    <!-- Ticker -->
+    <div style="background:var(--sidebar-bg);color:var(--sidebar-active);border-radius:10px;padding:12px 20px;margin-bottom:18px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
+      <span style="font-size:12px;font-weight:600;letter-spacing:1px;text-transform:uppercase;opacity:0.7;">${tickerLabel}</span>
+      <span style="font-size:22px;font-weight:700;font-variant-numeric:tabular-nums;">₹${totalCost.toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
+    </div>
 
     <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:18px;flex-wrap:wrap;">
       <div style="display:flex;gap:8px;flex-wrap:wrap;">${cats.map(c=>`<button class="btn btn-sm ${filter===c?'btn-primary':'btn-ghost'}" onclick="setRMFilter('${c}')">${c}</button>`).join('')}</div>
@@ -931,25 +950,49 @@ function renderRMInventory() {
 
     <div class="card" style="padding:0;overflow:hidden;"><div class="tbl-wrap"><table class="tbl">
       <thead><tr>
-        <th>Item</th><th>Category</th>
-        <th>Warehouse</th><th>Brewery</th><th>Total</th>
-        <th>Reorder At</th><th>Last Cost</th><th>Status</th><th style="text-align:right;">Actions</th>
+        <th>Item</th>
+        ${isAll?'<th>Category</th>':''}
+        ${isMaltTab?'<th>Warehouse</th><th>Brewery</th>':''}
+        <th>Total</th>
+        ${isAll?'<th>Reorder At</th>':''}
+        <th>Last Cost</th>
+        ${isMaltTab?'<th>Batch No.</th><th>Extract LDK</th><th>Last Delivery</th>':''}
+        ${isHopsTab?'<th>Batch No.</th><th>Alpha Acid %</th><th>Last Delivery</th>':''}
+        ${isCatTab&&!isMaltTab&&!isHopsTab?'<th>Batch No.</th><th>Last Delivery</th>':''}
+        <th style="text-align:right;">Actions</th>
       </tr></thead>
       <tbody>${items.map(r=>{
         const {pct,low,critical,color,total}=rmStatus(r);
         const isMalt = r.category==='Malt';
+        const isHops = r.category==='Hops';
+        const totalColor = isAll?(critical?'var(--red)':low?'var(--orange)':'var(--text)'):'var(--text)';
         return `<tr>
           <td><strong>${r.name}</strong></td>
-          <td><span class="badge badge-gray">${r.category}</span></td>
-          <td>${isMalt?`<span style="font-weight:600;">${r.warehouseStock||0} ${r.unit}</span>`:`<span style="color:var(--muted);">—</span>`}</td>
-          <td>${isMalt?`${r.breweryStock||0} ${r.unit}`:`<span style="color:var(--muted);">—</span>`}</td>
+          ${isAll?`<td><span class="badge badge-gray">${r.category}</span></td>`:''}
+          ${isMaltTab?`
+            <td><span style="font-weight:600;">${r.warehouseStock||0} ${r.unit}</span></td>
+            <td>${r.breweryStock||0} ${r.unit}</td>
+          `:''}
           <td>
-            <div style="font-weight:600;">${total} ${r.unit}</div>
-            <div class="rm-bar-wrap" style="margin-top:4px;width:80px;"><div class="rm-bar" style="width:${pct}%;background:${color};"></div></div>
+            <div style="font-weight:700;color:${totalColor};">${total} ${r.unit}</div>
+            ${isAll?`<div class="rm-bar-wrap" style="margin-top:4px;width:80px;"><div class="rm-bar" style="width:${pct}%;background:${color};"></div></div>`:''}
           </td>
-          <td style="color:var(--muted);">${r.reorder} ${r.unit}</td>
+          ${isAll?`<td style="color:var(--muted);">${r.reorder?r.reorder+' '+r.unit:'—'}</td>`:''}
           <td style="color:var(--muted);font-size:13px;">${r.lastCost?'₹'+r.lastCost.toFixed(2)+'/'+r.unit:'—'}</td>
-          <td>${critical?'<span class="badge badge-red">Critical</span>':low?'<span class="badge badge-orange">Low</span>':'<span class="badge badge-green">OK</span>'}</td>
+          ${isMaltTab?`
+            <td style="font-size:13px;">${r.lastBatchNo||'<span style="color:var(--muted);">—</span>'}</td>
+            <td style="font-size:13px;">${r.extractLdk!=null&&r.extractLdk!==''?r.extractLdk:'<span style="color:var(--muted);">—</span>'}</td>
+            <td style="font-size:13px;color:var(--muted);">${r.lastDeliveryDate?fmtDate(r.lastDeliveryDate):'—'}</td>
+          `:''}
+          ${isHopsTab?`
+            <td style="font-size:13px;">${r.lastBatchNo||'<span style="color:var(--muted);">—</span>'}</td>
+            <td style="font-size:13px;">${r.alphaAcid!=null&&r.alphaAcid!==''?r.alphaAcid+'%':'<span style="color:var(--muted);">—</span>'}</td>
+            <td style="font-size:13px;color:var(--muted);">${r.lastDeliveryDate?fmtDate(r.lastDeliveryDate):'—'}</td>
+          `:''}
+          ${isCatTab&&!isMaltTab&&!isHopsTab?`
+            <td style="font-size:13px;">${r.lastBatchNo||'<span style="color:var(--muted);">—</span>'}</td>
+            <td style="font-size:13px;color:var(--muted);">${r.lastDeliveryDate?fmtDate(r.lastDeliveryDate):'—'}</td>
+          `:''}
           <td style="text-align:right;white-space:nowrap;">
             ${isMalt?`<button class="btn btn-sm btn-ghost" onclick="openTransferModal(${r.id})" style="margin-right:4px;">🏭 Transfer</button>`:''}
             <button class="btn btn-sm btn-ghost" onclick="openEditRM(${r.id})">✏️</button>
@@ -968,7 +1011,7 @@ function renderRMInventory() {
         <div class="form-row form-row-3">
           <div class="form-group"><label class="lbl">Category</label>
             <select class="inp" id="rmm-cat" onchange="toggleMaltFields(this.value)">
-              <option>Malt</option><option>Hops</option><option>Yeast</option><option>Water Chem</option><option>Adjuncts</option><option>Gases</option><option>Cleaning</option><option>Other</option>
+              <option>Malt</option><option>Hops</option><option>Yeast</option><option>Salts++</option><option>Adjuncts</option><option>Gases</option><option>Cleaning</option><option>Other</option>
             </select>
           </div>
           <div class="form-group"><label class="lbl">Unit</label><input class="inp" id="rmm-unit" placeholder="kg/L/pkt"></div>
@@ -1252,7 +1295,7 @@ function applyTransfer(){
 
 // ── Purchase Order helpers ────────────────────────────────────────────────────
 let _poItems = [];
-const CAT_OPTIONS = ['Malt','Hops','Yeast','Water Chem','Adjuncts','Gases','Cleaning','Other'];
+const CAT_OPTIONS = ['Malt','Hops','Yeast','Salts++','Adjuncts','Gases','Cleaning','Other'];
 const UNIT_OPTIONS = ['kg','g','L','ml','pkt','bag','drum','other'];
 
 function _setPOReceiveBtn(status) {
@@ -1427,6 +1470,7 @@ function savePO(){
     if(item.batchNo) r.lastBatchNo=item.batchNo;
     if(item.extractLdk) r.extractLdk=item.extractLdk;
     if(item.alphaAcid) r.alphaAcid=item.alphaAcid;
+    r.lastDeliveryDate=po.deliveryDate||null;
     if(r.category==='Malt'){
       r.warehouseStock=(r.warehouseStock||0)+item.qty;
       r.stock=(r.warehouseStock)+(r.breweryStock||0);
