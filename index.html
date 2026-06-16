@@ -228,6 +228,7 @@ function saveState() {
   localStorage.setItem('brew_beer_inv', JSON.stringify(state.beerInventory));
   localStorage.setItem('brew_schedule', JSON.stringify(state.schedule));
   localStorage.setItem('brew_logs',     JSON.stringify(state.brewLogs));
+  localStorage.setItem('brew_pos',      JSON.stringify(state.purchaseOrders));
 }
 
 let state = {
@@ -241,22 +242,22 @@ let state = {
     { id:'BBT3',name:'BBT 3',type:'Bright Beer',cap:500,  beer:null, vol:0,   stage:'Empty',       since:null, temp:null, gravity:null },
   ],
   rawMaterials: loadLS('brew_raw') || [
-    { id:1,  name:'Pale Malt (Pilsner)', unit:'kg',  stock:850,  reorder:200, category:'Malt' },
-    { id:2,  name:'Wheat Malt',          unit:'kg',  stock:320,  reorder:100, category:'Malt' },
-    { id:3,  name:'Crystal 60',          unit:'kg',  stock:90,   reorder:50,  category:'Malt' },
-    { id:4,  name:'Carapils',            unit:'kg',  stock:40,   reorder:50,  category:'Malt' },
-    { id:5,  name:'Centennial Hops',     unit:'kg',  stock:12,   reorder:5,   category:'Hops' },
-    { id:6,  name:'Cascade Hops',        unit:'kg',  stock:8,    reorder:5,   category:'Hops' },
-    { id:7,  name:'Citra Hops',          unit:'kg',  stock:3.5,  reorder:4,   category:'Hops' },
-    { id:8,  name:'Saaz Hops',           unit:'kg',  stock:6,    reorder:3,   category:'Hops' },
-    { id:9,  name:'Lallemand Wit Yeast', unit:'pkt', stock:24,   reorder:10,  category:'Yeast' },
-    { id:10, name:'Fermentis US-05',     unit:'pkt', stock:18,   reorder:8,   category:'Yeast' },
-    { id:11, name:'Gypsum',              unit:'kg',  stock:5,    reorder:2,   category:'Water Chem' },
-    { id:12, name:'Lactic Acid',         unit:'L',   stock:3,    reorder:1,   category:'Water Chem' },
-    { id:13, name:'Finings (Biofine)',   unit:'L',   stock:8,    reorder:3,   category:'Adjuncts' },
-    { id:14, name:'CO2',                 unit:'kg',  stock:45,   reorder:20,  category:'Gases' },
-    { id:15, name:'Caustic (CIP)',       unit:'kg',  stock:30,   reorder:10,  category:'Cleaning' },
-    { id:16, name:'Peracetic Acid',      unit:'L',   stock:12,   reorder:5,   category:'Cleaning' },
+    { id:1,  name:'Pale Malt (Pilsner)', unit:'kg',  stock:850,  warehouseStock:700, breweryStock:150, reorder:200, category:'Malt', lastCost:0 },
+    { id:2,  name:'Wheat Malt',          unit:'kg',  stock:320,  warehouseStock:280, breweryStock:40,  reorder:100, category:'Malt', lastCost:0 },
+    { id:3,  name:'Crystal 60',          unit:'kg',  stock:90,   warehouseStock:70,  breweryStock:20,  reorder:50,  category:'Malt', lastCost:0 },
+    { id:4,  name:'Carapils',            unit:'kg',  stock:40,   warehouseStock:30,  breweryStock:10,  reorder:50,  category:'Malt', lastCost:0 },
+    { id:5,  name:'Centennial Hops',     unit:'kg',  stock:12,   reorder:5,   category:'Hops', lastCost:0 },
+    { id:6,  name:'Cascade Hops',        unit:'kg',  stock:8,    reorder:5,   category:'Hops', lastCost:0 },
+    { id:7,  name:'Citra Hops',          unit:'kg',  stock:3.5,  reorder:4,   category:'Hops', lastCost:0 },
+    { id:8,  name:'Saaz Hops',           unit:'kg',  stock:6,    reorder:3,   category:'Hops', lastCost:0 },
+    { id:9,  name:'Lallemand Wit Yeast', unit:'pkt', stock:24,   reorder:10,  category:'Yeast', lastCost:0 },
+    { id:10, name:'Fermentis US-05',     unit:'pkt', stock:18,   reorder:8,   category:'Yeast', lastCost:0 },
+    { id:11, name:'Gypsum',              unit:'kg',  stock:5,    reorder:2,   category:'Water Chem', lastCost:0 },
+    { id:12, name:'Lactic Acid',         unit:'L',   stock:3,    reorder:1,   category:'Water Chem', lastCost:0 },
+    { id:13, name:'Finings (Biofine)',   unit:'L',   stock:8,    reorder:3,   category:'Adjuncts', lastCost:0 },
+    { id:14, name:'CO2',                 unit:'kg',  stock:45,   reorder:20,  category:'Gases', lastCost:0 },
+    { id:15, name:'Caustic (CIP)',       unit:'kg',  stock:30,   reorder:10,  category:'Cleaning', lastCost:0 },
+    { id:16, name:'Peracetic Acid',      unit:'L',   stock:12,   reorder:5,   category:'Cleaning', lastCost:0 },
   ],
   beerInventory: loadLS('brew_beer_inv') || [
     { id:1, beer:'BB', kegs20:8,  kegs50:2, litres:260, location:'Cold Room' },
@@ -275,12 +276,24 @@ let state = {
   // status: Draft | In Progress | Completed
   // inventoryDeducted: bool — true once stock has been deducted
   brewLogs: loadLS('brew_logs') || [],
-  nextTankId: 8, nextRMId: 17, nextSchedId: 5, nextBrewId: 1,
+  purchaseOrders: loadLS('brew_pos') || [],
+  nextTankId: 8, nextRMId: 17, nextSchedId: 5, nextBrewId: 1, nextPOId: 1,
 };
 // make sure nextBrewId is beyond existing logs
 if (state.brewLogs.length) {
   state.nextBrewId = Math.max(...state.brewLogs.map(b=>b.id)) + 1;
 }
+if (state.purchaseOrders.length) {
+  state.nextPOId = Math.max(...state.purchaseOrders.map(p=>p.id)) + 1;
+}
+// Migrate old RM records to new schema
+state.rawMaterials.forEach(r => {
+  if (r.category === 'Malt') {
+    if (r.warehouseStock == null) r.warehouseStock = Math.round(r.stock * 0.8);
+    if (r.breweryStock == null)   r.breweryStock   = r.stock - r.warehouseStock;
+  }
+  if (r.lastCost == null) r.lastCost = 0;
+});
 
 // ── Nav ───────────────────────────────────────────────────────────────────────
 const TABS = [
@@ -336,10 +349,11 @@ function stageBadge(stage) {
   return `<span class="badge ${map[stage]||'badge-gray'}">${stage}</span>`;
 }
 function rmStatus(item) {
-  const pct = Math.min(100, Math.round(item.stock/(item.reorder*4)*100));
-  const low = item.stock<=item.reorder, critical = item.stock<=item.reorder*0.5;
+  const total = item.category==='Malt' ? (item.warehouseStock||0)+(item.breweryStock||0) : item.stock;
+  const pct = Math.min(100, Math.round(total/(item.reorder*4)*100));
+  const low = total<=item.reorder, critical = total<=item.reorder*0.5;
   const color = critical?'var(--red)':low?'var(--orange)':'var(--green)';
-  return {pct,low,critical,color};
+  return {pct,low,critical,color,total};
 }
 
 // ── renderContent ─────────────────────────────────────────────────────────────
@@ -902,31 +916,67 @@ function deleteTank(){
 
 // ── Raw Materials ─────────────────────────────────────────────────────────────
 function renderRaw() {
+  const subTab = window._rmSubTab || 'inventory';
+  return `
+    <div style="display:flex;gap:8px;margin-bottom:20px;">
+      <button class="btn btn-sm ${subTab==='inventory'?'btn-primary':'btn-ghost'}" onclick="setRMSubTab('inventory')">📦 Inventory</button>
+      <button class="btn btn-sm ${subTab==='po'?'btn-primary':'btn-ghost'}" onclick="setRMSubTab('po')">🧾 Purchase Orders</button>
+    </div>
+    ${subTab==='inventory' ? renderRMInventory() : renderPOList()}
+  `;
+}
+
+function setRMSubTab(t){window._rmSubTab=t;renderContent();}
+
+function renderRMInventory() {
   const cats=['All',...new Set(state.rawMaterials.map(r=>r.category))];
   const filter=window._rmFilter||'All';
   const items=filter==='All'?state.rawMaterials:state.rawMaterials.filter(r=>r.category===filter);
-  const low=state.rawMaterials.filter(r=>r.stock<=r.reorder);
+  const low=state.rawMaterials.filter(r=>{const {total}=rmStatus(r);return total<=r.reorder;});
+
   return `
     ${low.length?`<div style="background:#FEF3C7;border:1px solid #F59E0B;border-radius:10px;padding:12px 16px;margin-bottom:18px;font-size:13px;color:#92400E;">
       ⚠️ <strong>${low.length} item${low.length>1?'s':''}</strong> at or below reorder level: ${low.map(r=>r.name).join(', ')}</div>`:''}
+
     <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:18px;flex-wrap:wrap;">
       <div style="display:flex;gap:8px;flex-wrap:wrap;">${cats.map(c=>`<button class="btn btn-sm ${filter===c?'btn-primary':'btn-ghost'}" onclick="setRMFilter('${c}')">${c}</button>`).join('')}</div>
-      <button class="btn btn-primary" onclick="openAddRM()">+ Add Item</button>
+      <div style="display:flex;gap:8px;">
+        <button class="btn btn-ghost" onclick="openAddRM()">+ Add Item</button>
+        <button class="btn btn-primary" onclick="setRMSubTab('po')">+ Purchase Order</button>
+      </div>
     </div>
+
     <div class="card" style="padding:0;overflow:hidden;"><div class="tbl-wrap"><table class="tbl">
-      <thead><tr><th>Item</th><th>Category</th><th>Stock</th><th>Reorder At</th><th>Status</th><th style="text-align:right;">Actions</th></tr></thead>
-      <tbody>${items.map(r=>{const {pct,low,critical,color}=rmStatus(r);return `<tr>
-        <td><strong>${r.name}</strong></td>
-        <td><span class="badge badge-gray">${r.category}</span></td>
-        <td><div>${r.stock} ${r.unit}</div><div class="rm-bar-wrap" style="margin-top:5px;width:100px;"><div class="rm-bar" style="width:${pct}%;background:${color};"></div></div></td>
-        <td style="color:var(--muted);">${r.reorder} ${r.unit}</td>
-        <td>${critical?'<span class="badge badge-red">Critical</span>':low?'<span class="badge badge-orange">Low</span>':'<span class="badge badge-green">OK</span>'}</td>
-        <td style="text-align:right;white-space:nowrap;">
-          <button class="btn btn-sm btn-ghost" onclick="openEditRM(${r.id})">✏️ Edit</button>
-          <button class="btn btn-sm btn-ghost" onclick="openAdjRM(${r.id})" style="margin-left:6px;">⚖️ Adjust</button>
-        </td></tr>`;}).join('')}</tbody>
+      <thead><tr>
+        <th>Item</th><th>Category</th>
+        <th>Warehouse</th><th>Brewery</th><th>Total</th>
+        <th>Reorder At</th><th>Last Cost</th><th>Status</th><th style="text-align:right;">Actions</th>
+      </tr></thead>
+      <tbody>${items.map(r=>{
+        const {pct,low,critical,color,total}=rmStatus(r);
+        const isMalt = r.category==='Malt';
+        return `<tr>
+          <td><strong>${r.name}</strong></td>
+          <td><span class="badge badge-gray">${r.category}</span></td>
+          <td>${isMalt?`<span style="font-weight:600;">${r.warehouseStock||0} ${r.unit}</span>`:`<span style="color:var(--muted);">—</span>`}</td>
+          <td>${isMalt?`${r.breweryStock||0} ${r.unit}`:`<span style="color:var(--muted);">—</span>`}</td>
+          <td>
+            <div style="font-weight:600;">${total} ${r.unit}</div>
+            <div class="rm-bar-wrap" style="margin-top:4px;width:80px;"><div class="rm-bar" style="width:${pct}%;background:${color};"></div></div>
+          </td>
+          <td style="color:var(--muted);">${r.reorder} ${r.unit}</td>
+          <td style="color:var(--muted);font-size:13px;">${r.lastCost?'₹'+r.lastCost.toFixed(2)+'/'+r.unit:'—'}</td>
+          <td>${critical?'<span class="badge badge-red">Critical</span>':low?'<span class="badge badge-orange">Low</span>':'<span class="badge badge-green">OK</span>'}</td>
+          <td style="text-align:right;white-space:nowrap;">
+            ${isMalt?`<button class="btn btn-sm btn-ghost" onclick="openTransferModal(${r.id})" style="margin-right:4px;">🏭 Transfer</button>`:''}
+            <button class="btn btn-sm btn-ghost" onclick="openEditRM(${r.id})">✏️</button>
+            <button class="btn btn-sm btn-ghost" onclick="openAdjRM(${r.id})" style="margin-left:4px;">⚖️</button>
+          </td>
+        </tr>`;}).join('')}
+      </tbody>
     </table></div></div>
 
+    <!-- Add/Edit RM Modal -->
     <div id="rm-modal" class="modal-overlay" style="display:none;" onclick="if(event.target===this)closeRMModal()">
       <div class="modal-box">
         <div class="modal-title" id="rm-modal-title">Add Raw Material</div>
@@ -934,12 +984,22 @@ function renderRaw() {
         <div class="form-group"><label class="lbl">Item Name</label><input class="inp" id="rmm-name"></div>
         <div class="form-row form-row-3">
           <div class="form-group"><label class="lbl">Category</label>
-            <select class="inp" id="rmm-cat"><option>Malt</option><option>Hops</option><option>Yeast</option><option>Water Chem</option><option>Adjuncts</option><option>Gases</option><option>Cleaning</option><option>Other</option></select>
+            <select class="inp" id="rmm-cat" onchange="toggleMaltFields(this.value)">
+              <option>Malt</option><option>Hops</option><option>Yeast</option><option>Water Chem</option><option>Adjuncts</option><option>Gases</option><option>Cleaning</option><option>Other</option>
+            </select>
           </div>
           <div class="form-group"><label class="lbl">Unit</label><input class="inp" id="rmm-unit" placeholder="kg/L/pkt"></div>
           <div class="form-group"><label class="lbl">Reorder At</label><input class="inp" id="rmm-reorder" type="number"></div>
         </div>
-        <div class="form-group"><label class="lbl">Current Stock</label><input class="inp" id="rmm-stock" type="number" step="0.1"></div>
+        <div id="rmm-malt-fields">
+          <div class="form-row form-row-2">
+            <div class="form-group"><label class="lbl">Warehouse Stock</label><input class="inp" id="rmm-warehouse" type="number" step="0.1" value="0"></div>
+            <div class="form-group"><label class="lbl">Brewery Stock</label><input class="inp" id="rmm-brewery" type="number" step="0.1" value="0"></div>
+          </div>
+        </div>
+        <div id="rmm-std-fields">
+          <div class="form-group"><label class="lbl">Current Stock</label><input class="inp" id="rmm-stock" type="number" step="0.1"></div>
+        </div>
         <div class="modal-actions">
           <button class="btn btn-ghost" onclick="closeRMModal()">Cancel</button>
           <button class="btn btn-danger btn-sm" id="rmm-delete" onclick="deleteRM()" style="display:none;">Delete</button>
@@ -947,8 +1007,10 @@ function renderRaw() {
         </div>
       </div>
     </div>
+
+    <!-- Adjust Stock Modal -->
     <div id="adj-modal" class="modal-overlay" style="display:none;" onclick="if(event.target===this)closeAdjModal()">
-      <div class="modal-box" style="max-width:380px;">
+      <div class="modal-box" style="max-width:400px;">
         <div class="modal-title">Adjust Stock</div>
         <input type="hidden" id="adj-id">
         <div id="adj-info" style="font-size:15px;margin-bottom:16px;"></div>
@@ -958,18 +1020,157 @@ function renderRaw() {
           </div>
           <div class="form-group"><label class="lbl">Amount</label><input class="inp" id="adj-qty" type="number" step="0.1"></div>
         </div>
+        <div id="adj-loc-row" style="display:none;" class="form-group">
+          <label class="lbl">Location</label>
+          <select class="inp" id="adj-loc"><option value="warehouse">Warehouse</option><option value="brewery">Brewery</option></select>
+        </div>
         <div class="modal-actions">
           <button class="btn btn-ghost" onclick="closeAdjModal()">Cancel</button>
           <button class="btn btn-primary" onclick="applyAdj()">Apply</button>
         </div>
       </div>
+    </div>
+
+    <!-- Malt Transfer Modal -->
+    <div id="transfer-modal" class="modal-overlay" style="display:none;" onclick="if(event.target===this)closeTransferModal()">
+      <div class="modal-box" style="max-width:400px;">
+        <div class="modal-title">Transfer Malt to Brewery</div>
+        <input type="hidden" id="tr-id">
+        <div id="tr-info" style="font-size:14px;margin-bottom:16px;color:var(--muted);"></div>
+        <div class="form-group"><label class="lbl">Quantity to transfer (kg)</label>
+          <input class="inp" id="tr-qty" type="number" step="0.1" placeholder="0">
+        </div>
+        <p style="font-size:12px;color:var(--muted);margin-top:-8px;">Moves from Warehouse → Brewery</p>
+        <div class="modal-actions">
+          <button class="btn btn-ghost" onclick="closeTransferModal()">Cancel</button>
+          <button class="btn btn-primary" onclick="applyTransfer()">Transfer</button>
+        </div>
+      </div>
     </div>`;
 }
+
+// ── Purchase Orders ────────────────────────────────────────────────────────────
+function renderPOList() {
+  const pos = [...state.purchaseOrders].sort((a,b)=>b.orderDate.localeCompare(a.orderDate));
+  const statusClass = { Received:'badge-green', 'Partially Received':'badge-orange' };
+  const unpaidTotal = pos.filter(p=>!p.paid).reduce((s,p)=>{
+    const t=p.items.reduce((x,i)=>x+(i.qty*i.unitCost),0);
+    const g=p.items.reduce((x,i)=>x+(i.qty*i.unitCost*(i.gst/100)),0);
+    return s+t+g+(p.deliveryCharge||0);
+  },0);
+
+  return `
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:12px;">
+      ${unpaidTotal>0?`<div style="background:#FEF3C7;border:1px solid #F59E0B;border-radius:8px;padding:8px 14px;font-size:13px;color:#92400E;">
+        💰 Outstanding: <strong>₹${unpaidTotal.toFixed(2)}</strong> unpaid across ${pos.filter(p=>!p.paid).length} PO${pos.filter(p=>!p.paid).length!==1?'s':''}
+      </div>`:'<div></div>'}
+      <button class="btn btn-primary" onclick="openNewPO()">+ New Purchase Order</button>
+    </div>
+
+    ${pos.length===0?`<div class="empty" style="background:var(--surface);border:1px solid var(--border);border-radius:12px;">No purchase orders yet.</div>`
+    : pos.map(po=>{
+        const total = po.items.reduce((s,i)=>s+(i.qty*i.unitCost),0);
+        const gst   = po.items.reduce((s,i)=>s+(i.qty*i.unitCost*(i.gst/100)),0);
+        const grand = total+gst+(po.deliveryCharge||0);
+        return `
+        <div class="card" style="margin-bottom:12px;">
+          <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap;">
+            <div style="cursor:pointer;flex:1;" onclick="openViewPO(${po.id})">
+              <div style="font-size:15px;font-weight:700;">PO #${po.id} — ${po.vendor}</div>
+              <div style="font-size:13px;color:var(--muted);margin-top:3px;">Ordered: ${fmtDate(po.orderDate)}${po.deliveryDate?' · Received: '+fmtDate(po.deliveryDate):''}</div>
+              <div style="font-size:13px;color:var(--muted);margin-top:2px;">${po.items.length} item${po.items.length!==1?'s':''}: ${po.items.map(i=>i.name).join(', ')}</div>
+            </div>
+            <div style="text-align:right;flex-shrink:0;">
+              <div style="display:flex;align-items:center;gap:8px;justify-content:flex-end;margin-bottom:6px;">
+                <span class="badge ${statusClass[po.status]||'badge-gray'}">${po.status}</span>
+                <span class="badge ${po.paid?'badge-green':'badge-orange'}">${po.paid?'✓ Paid':'Unpaid'}</span>
+              </div>
+              <div style="font-size:16px;font-weight:700;">₹${grand.toFixed(2)}</div>
+              <div style="font-size:11px;color:var(--muted);margin-top:2px;">incl. GST & delivery</div>
+              <button class="btn btn-sm ${po.paid?'btn-ghost':'btn-primary'}" style="margin-top:8px;"
+                onclick="event.stopPropagation();togglePOPaid(${po.id})">
+                ${po.paid?'Mark Unpaid':'Mark as Paid'}
+              </button>
+            </div>
+          </div>
+        </div>`;}).join('')}
+
+    <!-- New/View PO Modal -->
+    <div id="po-modal" class="modal-overlay" style="display:none;" onclick="if(event.target===this)closePOModal()">
+      <div class="modal-box" style="max-width:700px;">
+        <div class="modal-title" id="po-modal-title">New Purchase Order</div>
+        <input type="hidden" id="po-id">
+
+        <div class="form-row form-row-2" style="margin-bottom:16px;">
+          <div class="form-group"><label class="lbl">Vendor / Supplier</label><input class="inp" id="po-vendor" placeholder="e.g. XYZ Suppliers"></div>
+          <div class="form-group"><label class="lbl">Order Date</label><input class="inp" id="po-order-date" type="date"></div>
+        </div>
+
+        <div style="margin-bottom:16px;">
+          <div class="section-title" style="margin-bottom:10px;">Items Ordered</div>
+          <!-- column headers -->
+          <div style="display:grid;grid-template-columns:1.8fr 1fr 90px 90px 80px 80px 28px;gap:6px;margin-bottom:6px;padding:0 2px;">
+            <div class="ing-lbl">Item Name</div>
+            <div class="ing-lbl">Category</div>
+            <div class="ing-lbl">Unit</div>
+            <div class="ing-lbl">Qty</div>
+            <div class="ing-lbl">₹/Unit</div>
+            <div class="ing-lbl">GST %</div>
+            <div></div>
+          </div>
+          <div id="po-items-list"></div>
+          <button class="btn btn-ghost btn-sm" style="margin-top:8px;" onclick="addPOItem()">+ Add Item</button>
+        </div>
+
+        <div style="border-top:1px solid var(--border);padding-top:14px;margin-top:4px;">
+          <div style="display:flex;gap:10px;margin-bottom:12px;align-items:flex-end;flex-wrap:wrap;">
+            <div class="form-group" style="width:140px;">
+              <label class="lbl">Delivery Charge (₹)</label>
+              <input class="inp" id="po-delivery-charge" type="number" step="0.01" value="0" oninput="updatePOTotals()">
+            </div>
+            <div class="form-group" style="flex:1;min-width:140px;">
+              <label class="lbl">Delivery Date</label>
+              <input class="inp" id="po-delivery-date" type="date">
+            </div>
+            <div class="form-group" style="flex:1;min-width:160px;">
+              <label class="lbl">Status</label>
+              <select class="inp" id="po-status">
+                <option>Received</option>
+                <option>Partially Received</option>
+              </select>
+            </div>
+          </div>
+          <div style="background:var(--bg);border-radius:8px;padding:12px 16px;font-size:13px;">
+            <div style="display:flex;justify-content:space-between;margin-bottom:4px;"><span style="color:var(--muted);">Subtotal</span><span id="po-subtotal">₹0.00</span></div>
+            <div style="display:flex;justify-content:space-between;margin-bottom:4px;"><span style="color:var(--muted);">GST</span><span id="po-gst-total">₹0.00</span></div>
+            <div style="display:flex;justify-content:space-between;margin-bottom:4px;"><span style="color:var(--muted);">Delivery</span><span id="po-delivery-total">₹0.00</span></div>
+            <div style="display:flex;justify-content:space-between;font-weight:700;font-size:15px;border-top:1px solid var(--border);padding-top:8px;margin-top:4px;"><span>Grand Total</span><span id="po-grand-total">₹0.00</span></div>
+          </div>
+        </div>
+
+        <div class="modal-actions">
+          <button class="btn btn-ghost" onclick="closePOModal()">Cancel</button>
+          <button class="btn btn-danger btn-sm" id="po-delete" onclick="deletePO()" style="display:none;">Delete</button>
+          <button class="btn btn-green" onclick="savePO()">✓ Save & Update Stock</button>
+        </div>
+      </div>
+    </div>`;
+}
+
+// ── RM helpers ────────────────────────────────────────────────────────────────
+function toggleMaltFields(cat) {
+  const isMalt = cat==='Malt';
+  document.getElementById('rmm-malt-fields').style.display = isMalt?'block':'none';
+  document.getElementById('rmm-std-fields').style.display  = isMalt?'none':'block';
+}
 function setRMFilter(f){window._rmFilter=f;renderContent();}
+
 function openAddRM(){
-  ['rmm-id','rmm-name','rmm-unit','rmm-stock','rmm-reorder'].forEach(id=>document.getElementById(id).value='');
+  ['rmm-id','rmm-name','rmm-unit','rmm-stock','rmm-reorder','rmm-warehouse','rmm-brewery'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
   document.getElementById('rm-modal-title').textContent='Add Raw Material';
   document.getElementById('rmm-delete').style.display='none';
+  document.getElementById('rmm-cat').value='Malt';
+  toggleMaltFields('Malt');
   document.getElementById('rm-modal').style.display='flex';
 }
 function openEditRM(id){
@@ -979,15 +1180,33 @@ function openEditRM(id){
   document.getElementById('rmm-name').value=r.name;
   document.getElementById('rmm-cat').value=r.category;
   document.getElementById('rmm-unit').value=r.unit;
-  document.getElementById('rmm-stock').value=r.stock;
   document.getElementById('rmm-reorder').value=r.reorder;
   document.getElementById('rmm-delete').style.display='inline-flex';
+  toggleMaltFields(r.category);
+  if(r.category==='Malt'){
+    document.getElementById('rmm-warehouse').value=r.warehouseStock||0;
+    document.getElementById('rmm-brewery').value=r.breweryStock||0;
+  } else {
+    document.getElementById('rmm-stock').value=r.stock;
+  }
   document.getElementById('rm-modal').style.display='flex';
 }
 function closeRMModal(){document.getElementById('rm-modal').style.display='none';}
 function saveRM(){
   const id=+document.getElementById('rmm-id').value;
-  const obj={name:document.getElementById('rmm-name').value.trim(),category:document.getElementById('rmm-cat').value,unit:document.getElementById('rmm-unit').value.trim(),stock:+document.getElementById('rmm-stock').value,reorder:+document.getElementById('rmm-reorder').value};
+  const cat=document.getElementById('rmm-cat').value;
+  const isMalt=cat==='Malt';
+  const wh=+document.getElementById('rmm-warehouse').value||0;
+  const br=+document.getElementById('rmm-brewery').value||0;
+  const obj={
+    name:document.getElementById('rmm-name').value.trim(),
+    category:cat,
+    unit:document.getElementById('rmm-unit').value.trim(),
+    reorder:+document.getElementById('rmm-reorder').value,
+    stock: isMalt ? wh+br : +document.getElementById('rmm-stock').value,
+    ...(isMalt ? {warehouseStock:wh,breweryStock:br} : {}),
+    lastCost: 0,
+  };
   if(!obj.name){toast('Name required',false);return;}
   if(id){const i=state.rawMaterials.findIndex(x=>x.id===id);state.rawMaterials[i]={...state.rawMaterials[i],...obj};}
   else{obj.id=state.nextRMId++;state.rawMaterials.push(obj);}
@@ -1002,9 +1221,11 @@ function deleteRM(){
 function openAdjRM(id){
   const r=state.rawMaterials.find(x=>x.id===id);if(!r)return;
   document.getElementById('adj-id').value=r.id;
-  document.getElementById('adj-info').innerHTML=`<strong>${r.name}</strong> — Current: <strong>${r.stock} ${r.unit}</strong>`;
+  const isMalt=r.category==='Malt';
+  document.getElementById('adj-info').innerHTML=`<strong>${r.name}</strong>${isMalt?` — Warehouse: <strong>${r.warehouseStock||0} ${r.unit}</strong> · Brewery: <strong>${r.breweryStock||0} ${r.unit}</strong>`:` — Stock: <strong>${r.stock} ${r.unit}</strong>`}`;
   document.getElementById('adj-qty').value='';
   document.getElementById('adj-type').value='add';
+  document.getElementById('adj-loc-row').style.display=isMalt?'block':'none';
   document.getElementById('adj-modal').style.display='flex';
 }
 function closeAdjModal(){document.getElementById('adj-modal').style.display='none';}
@@ -1012,11 +1233,210 @@ function applyAdj(){
   const id=+document.getElementById('adj-id').value;
   const qty=+document.getElementById('adj-qty').value;
   const type=document.getElementById('adj-type').value;
+  const loc=document.getElementById('adj-loc').value;
   const i=state.rawMaterials.findIndex(x=>x.id===id);
-  if(type==='add') state.rawMaterials[i].stock=Math.round((state.rawMaterials[i].stock+qty)*1000)/1000;
-  else if(type==='sub') state.rawMaterials[i].stock=Math.max(0,Math.round((state.rawMaterials[i].stock-qty)*1000)/1000);
-  else state.rawMaterials[i].stock=qty;
+  const r=state.rawMaterials[i];
+  const isMalt=r.category==='Malt';
+  function adj(cur,t,q){return t==='add'?Math.round((cur+q)*1000)/1000:t==='sub'?Math.max(0,Math.round((cur-q)*1000)/1000):q;}
+  if(isMalt){
+    if(loc==='warehouse') r.warehouseStock=adj(r.warehouseStock||0,type,qty);
+    else r.breweryStock=adj(r.breweryStock||0,type,qty);
+    r.stock=(r.warehouseStock||0)+(r.breweryStock||0);
+  } else {
+    r.stock=adj(r.stock,type,qty);
+  }
   saveState();closeAdjModal();renderContent();toast('Stock updated');
+}
+function openTransferModal(id){
+  const r=state.rawMaterials.find(x=>x.id===id);if(!r)return;
+  document.getElementById('tr-id').value=r.id;
+  document.getElementById('tr-info').innerHTML=`<strong>${r.name}</strong><br>Warehouse: <strong>${r.warehouseStock||0} kg</strong> → Brewery: <strong>${r.breweryStock||0} kg</strong>`;
+  document.getElementById('tr-qty').value='';
+  document.getElementById('transfer-modal').style.display='flex';
+}
+function closeTransferModal(){document.getElementById('transfer-modal').style.display='none';}
+function applyTransfer(){
+  const id=+document.getElementById('tr-id').value;
+  const qty=+document.getElementById('tr-qty').value;
+  const i=state.rawMaterials.findIndex(x=>x.id===id);
+  const r=state.rawMaterials[i];
+  if(qty<=0){toast('Enter a valid quantity',false);return;}
+  if(qty>(r.warehouseStock||0)){toast(`Only ${r.warehouseStock||0} kg in warehouse`,false);return;}
+  r.warehouseStock=Math.round(((r.warehouseStock||0)-qty)*1000)/1000;
+  r.breweryStock=Math.round(((r.breweryStock||0)+qty)*1000)/1000;
+  saveState();closeTransferModal();renderContent();toast(`${qty} kg transferred to brewery`);
+}
+
+// ── Purchase Order helpers ────────────────────────────────────────────────────
+let _poItems = [];
+const CAT_OPTIONS = ['Malt','Hops','Yeast','Water Chem','Adjuncts','Gases','Cleaning','Other'];
+const UNIT_OPTIONS = ['kg','g','L','ml','pkt','bag','drum','other'];
+
+function _setPOReceiveBtn(status) {
+  // no-op now — single save button always visible
+}
+
+function openNewPO(){
+  _poItems=[{name:'',category:'Malt',unit:'kg',qty:0,unitCost:0,gst:18}];
+  document.getElementById('po-modal-title').textContent='New Purchase Order';
+  document.getElementById('po-id').value='';
+  document.getElementById('po-vendor').value='';
+  document.getElementById('po-order-date').value=new Date().toISOString().slice(0,10);
+  document.getElementById('po-delivery-date').value='';
+  document.getElementById('po-delivery-charge').value='0';
+  document.getElementById('po-status').value='Received';
+  document.getElementById('po-delete').style.display='none';
+  renderPOItems();
+  updatePOTotals();
+  document.getElementById('po-modal').style.display='flex';
+}
+
+function openViewPO(id){
+  const po=state.purchaseOrders.find(x=>x.id===id);if(!po)return;
+  _poItems=po.items.map(i=>({...i}));
+  document.getElementById('po-modal-title').textContent=`PO #${po.id} — ${po.vendor}`;
+  document.getElementById('po-id').value=po.id;
+  document.getElementById('po-vendor').value=po.vendor;
+  document.getElementById('po-order-date').value=po.orderDate;
+  document.getElementById('po-delivery-date').value=po.deliveryDate||'';
+  document.getElementById('po-delivery-charge').value=po.deliveryCharge||0;
+  document.getElementById('po-status').value=po.status||'Received';
+  document.getElementById('po-delete').style.display='inline-flex';
+  renderPOItems();
+  updatePOTotals();
+  document.getElementById('po-modal').style.display='flex';
+}
+
+function closePOModal(){document.getElementById('po-modal').style.display='none';}
+
+function renderPOItems(){
+  const catOpts = CAT_OPTIONS.map(c=>`<option value="${c}">${c}</option>`).join('');
+  const unitOpts = UNIT_OPTIONS.map(u=>`<option value="${u}">${u}</option>`).join('');
+  // datalist of existing RM names for autocomplete
+  const rmDatalist = `<datalist id="rm-names-list">${state.rawMaterials.map(r=>`<option value="${r.name}">`).join('')}</datalist>`;
+  document.getElementById('po-items-list').innerHTML = rmDatalist + _poItems.map((item,idx)=>`
+    <div style="display:grid;grid-template-columns:1.8fr 1fr 90px 90px 80px 80px 28px;gap:6px;margin-bottom:8px;align-items:center;">
+      <input class="inp inp-sm" value="${item.name||''}" placeholder="Type or pick existing item"
+        list="rm-names-list"
+        oninput="_poItems[${idx}].name=this.value;autofillPOItem(${idx},this.value)">
+      <select class="inp inp-sm" id="po-cat-${idx}" onchange="_poItems[${idx}].category=this.value">
+        ${catOpts.replace(`value="${item.category||'Malt'}"`,`value="${item.category||'Malt'}" selected`)}
+      </select>
+      <select class="inp inp-sm" id="po-unit-${idx}" onchange="_poItems[${idx}].unit=this.value">
+        ${unitOpts.replace(`value="${item.unit||'kg'}"`,`value="${item.unit||'kg'}" selected`)}
+      </select>
+      <input class="inp inp-sm" type="number" value="${item.qty||''}" placeholder="Qty"
+        oninput="_poItems[${idx}].qty=+this.value;updatePOTotals()">
+      <input class="inp inp-sm" type="number" value="${item.unitCost||''}" placeholder="₹" step="0.01"
+        oninput="_poItems[${idx}].unitCost=+this.value;updatePOTotals()">
+      <input class="inp inp-sm" type="number" value="${item.gst!=null?item.gst:18}" placeholder="%"
+        oninput="_poItems[${idx}].gst=+this.value;updatePOTotals()">
+      <button class="del-btn" onclick="removePOItem(${idx})">✕</button>
+    </div>
+    <div style="font-size:11px;color:var(--muted);margin-bottom:10px;padding-left:2px;">
+      Subtotal incl. GST: <strong>₹${((item.qty||0)*(item.unitCost||0)*(1+(item.gst||0)/100)).toFixed(2)}</strong>
+    </div>`).join('');
+}
+
+function autofillPOItem(idx, typedName) {
+  // When user picks an existing RM, auto-fill category and unit
+  const match = state.rawMaterials.find(r => r.name.toLowerCase() === typedName.toLowerCase());
+  if (match) {
+    _poItems[idx].category = match.category;
+    _poItems[idx].unit = match.unit;
+    const catEl = document.getElementById(`po-cat-${idx}`);
+    const unitEl = document.getElementById(`po-unit-${idx}`);
+    if (catEl) catEl.value = match.category;
+    if (unitEl) unitEl.value = match.unit;
+  }
+}
+
+function addPOItem(){
+  _poItems.push({name:'',category:'Malt',unit:'kg',qty:0,unitCost:0,gst:18});
+  renderPOItems();updatePOTotals();
+}
+function removePOItem(idx){_poItems.splice(idx,1);renderPOItems();updatePOTotals();}
+
+function updatePOTotals(){
+  const dc=+document.getElementById('po-delivery-charge').value||0;
+  const sub=_poItems.reduce((s,i)=>s+(i.qty*i.unitCost),0);
+  const gst=_poItems.reduce((s,i)=>s+(i.qty*i.unitCost*(i.gst/100)),0);
+  const grand=sub+gst+dc;
+  document.getElementById('po-subtotal').textContent='₹'+sub.toFixed(2);
+  document.getElementById('po-gst-total').textContent='₹'+gst.toFixed(2);
+  document.getElementById('po-delivery-total').textContent='₹'+dc.toFixed(2);
+  document.getElementById('po-grand-total').textContent='₹'+grand.toFixed(2);
+}
+
+function savePO(){
+  const vendor=document.getElementById('po-vendor').value.trim();
+  if(!vendor){toast('Vendor required',false);return;}
+  if(!document.getElementById('po-delivery-date').value){toast('Delivery date required',false);document.getElementById('po-delivery-date').focus();return;}
+  const validItems=_poItems.filter(i=>i.name.trim()&&i.qty>0);
+  if(!validItems.length){toast('Add at least one item with name and qty',false);return;}
+
+  const id=+document.getElementById('po-id').value;
+  const status=document.getElementById('po-status').value;
+  const isNew=!id;
+  const po={
+    vendor,
+    orderDate:document.getElementById('po-order-date').value,
+    deliveryDate:document.getElementById('po-delivery-date').value,
+    deliveryCharge:+document.getElementById('po-delivery-charge').value||0,
+    status,
+    items:validItems,
+  };
+
+  if(id){
+    const i=state.purchaseOrders.findIndex(x=>x.id===id);
+    state.purchaseOrders[i]={...state.purchaseOrders[i],...po};
+  } else {
+    po.id=state.nextPOId++;
+    po.paid=false;
+    state.purchaseOrders.push(po);
+  }
+
+  // Always update stock on save (this is a receive entry)
+  validItems.forEach(item=>{
+    const name=item.name.trim();
+    if(!name||!item.qty)return;
+    let i=state.rawMaterials.findIndex(r=>r.name.toLowerCase()===name.toLowerCase());
+    if(i<0){
+      const newRM={
+        id:state.nextRMId++, name, category:item.category||'Other',
+        unit:item.unit||'kg', stock:0, reorder:0, lastCost:item.unitCost||0,
+        ...(item.category==='Malt'?{warehouseStock:0,breweryStock:0}:{})
+      };
+      state.rawMaterials.push(newRM);
+      i=state.rawMaterials.length-1;
+    }
+    const r=state.rawMaterials[i];
+    r.lastCost=item.unitCost||0;
+    if(r.category==='Malt'){
+      r.warehouseStock=(r.warehouseStock||0)+item.qty;
+      r.stock=(r.warehouseStock)+(r.breweryStock||0);
+    } else {
+      r.stock=Math.round(((r.stock||0)+item.qty)*1000)/1000;
+    }
+  });
+
+  saveState();closePOModal();renderContent();
+  toast(`✓ PO saved & stock updated for ${validItems.length} item(s)`);
+}
+
+function deletePO(){
+  const id=+document.getElementById('po-id').value;
+  if(!confirm('Delete this PO?'))return;
+  state.purchaseOrders=state.purchaseOrders.filter(x=>x.id!==id);
+  saveState();closePOModal();renderContent();toast('Deleted');
+}
+
+function togglePOPaid(id){
+  const po=state.purchaseOrders.find(x=>x.id===id);
+  if(!po)return;
+  po.paid=!po.paid;
+  saveState();renderContent();
+  toast(po.paid?'Marked as paid':'Marked as unpaid');
 }
 
 // ── Beer Inventory ────────────────────────────────────────────────────────────
