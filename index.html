@@ -1012,7 +1012,7 @@ function renderBrewDetail(id) {
             onchange="updateLog(${id},'targetVol',+this.value)">
         </div>
       </div>
-      <div class="form-row form-row-${isDraft?'3':'3'}">
+      <div class="form-row" style="display:grid;grid-template-columns:${isDraft?'1fr 1fr 1fr 1fr':'1fr 1fr 1fr 1fr 1fr'};gap:12px;margin-bottom:0;flex-wrap:wrap;">
         <div class="form-group"><label class="lbl">Brewer</label>
           <input class="inp" value="${log.brewer||''}" placeholder="Name" ${!canEdit?'disabled':''}
             onchange="updateLog(${id},'brewer',this.value)">
@@ -1034,6 +1034,10 @@ function renderBrewDetail(id) {
             <input class="inp" value="${log.fgTarget||''}" placeholder="1.012" ${!canEdit?'disabled':''}
               onchange="updateLog(${id},'fgTarget',this.value)" style="width:50%;">
           </div>
+        </div>
+        <div class="form-group"><label class="lbl">Target ABV</label>
+          <input class="inp" value="${beer(log.beer)?.abv!=null?beer(log.beer).abv+'%':'—'}" disabled
+            style="color:var(--muted);background:var(--bg);">
         </div>
       </div>
     </div>
