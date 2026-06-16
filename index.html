@@ -221,12 +221,12 @@ const BEERS_SEED = [
   { code:"OW", name:"Other Weiss",   color:"#58A6FF", style:"Hefeweizen",     abv:5.0, ibu:12, active:true },
 ];
 // Live accessor — always reads from state
-function getBeers(activeOnly=false) {
+function getBeers(activeOnly) {
   const beers = state ? state.beers : BEERS_SEED;
-  return activeOnly ? beers.filter(b=>b.active!==false) : beers;
+  return activeOnly ? beers.filter(function(b){return b.active!==false;}) : beers;
 }
 // Keep BEERS as a compat alias pointing to active beers
-Object.defineProperty(window,'BEERS',{get:()=>getBeers(false)});
+Object.defineProperty(window,'BEERS',{get:function(){return getBeers(false);}});
 
 // ── State ─────────────────────────────────────────────────────────────────────
 function loadLS(k) { try { return JSON.parse(localStorage.getItem(k)); } catch(e){ return null; } }
@@ -831,6 +831,7 @@ function updateBrewCheck(id, key, val) {
 }
 
 
+function updateLog(id, field, val) {
   const i = state.brewLogs.findIndex(b=>b.id===id);
   if (i<0) return;
   state.brewLogs[i][field] = val;
