@@ -267,6 +267,8 @@ function setSyncStatus(ok) {
   lbl.textContent = ok ? 'Synced' : 'Offline';
 }
 
+let _initialSyncDone = false;
+
 async function pullFromSupabase() {
   try {
     const rows = await sbFetch('GET', '/rest/v1/brew_state?select=key,value');
@@ -282,9 +284,9 @@ async function pullFromSupabase() {
       }
     });
     if (changed) {
-      // persist to localStorage too
       SYNC_KEYS.forEach(k => localStorage.setItem('brew_' + k, JSON.stringify(state[k])));
     }
+    setSyncStatus(true);
     return changed;
   } catch(e) {
     console.warn('Supabase pull failed:', e.message);
@@ -298,7 +300,7 @@ function startSyncPoll() {
   if (_syncPollTimer) return;
   _syncPollTimer = setInterval(async () => {
     const changed = await pullFromSupabase();
-    if (changed) {
+    if (changed && _initialSyncDone) {
       renderNav();
       renderContent();
       showSyncToast('🔄 Data updated from another device');
@@ -3192,6 +3194,7 @@ function saveBeer() {
   pullFromSupabase().then(changed => {
     if (changed) { renderNav(); renderContent(); }
     setSyncStatus(true);
+    _initialSyncDone = true;
     startSyncPoll();
   }).catch(() => setSyncStatus(false));
 })();
