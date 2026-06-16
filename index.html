@@ -205,10 +205,7 @@
     <div id="topbar">
       <div class="topbar-title" id="topbar-title">Dashboard</div>
       <div style="display:flex;align-items:center;gap:14px;">
-      <div id="sync-status" style="font-size:11px;color:var(--muted);display:flex;align-items:center;gap:5px;">
-        <div id="sync-dot" style="width:7px;height:7px;border-radius:50%;background:var(--muted);"></div>
-        <span id="sync-label">Syncing...</span>
-      </div>
+      <span id="sync-label" style="font-size:12px;font-weight:500;transition:color 0.3s;color:var(--muted);"></span>
       <div class="topbar-date" id="topbar-date"></div>
     </div>
     </div>
@@ -221,126 +218,64 @@
 // ── Supabase Config ───────────────────────────────────────────────────────────
 const SB_URL = 'https://wznilnuaatmlqgfankno.supabase.co';
 const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Ind6bmlsbnVhYXRtbHFnZmFua25vIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY4NjMzODUsImV4cCI6MjA5MjQzOTM4NX0.CP15u0zCIM6o27hvMvWAuSYFdzdFBefccNPPvFXwIwQ';
+const SB_HDR = { 'Content-Type': 'application/json', 'apikey': SB_KEY, 'Authorization': 'Bearer ' + SB_KEY };
 
-async function sbFetch(method, path, body) {
-  const res = await fetch(SB_URL + path, {
-    method,
-    headers: {
-      'apikey': SB_KEY,
-      'Authorization': 'Bearer ' + SB_KEY,
-      'Content-Type': 'application/json',
-      'Prefer': method === 'POST' ? 'resolution=merge-duplicates' : ''
-    },
-    body: body ? JSON.stringify(body) : undefined
-  });
-  if (!res.ok) {
-    const err = await res.text();
-    throw new Error(err);
-  }
-  const text = await res.text();
-  return text ? JSON.parse(text) : null;
-}
-
-// Keys we sync to Supabase
 const SYNC_KEYS = ['tanks','rawMaterials','beerInventory','schedule','brewLogs',
                    'purchaseOrders','stockTakes','beers','gravityLogs'];
 
-async function pushToSupabase() {
-  const now = new Date().toISOString();
-  const rows = SYNC_KEYS.map(key => ({
-    key,
-    value: state[key],
-    updated_at: now
-  }));
-  try {
-    await sbFetch('POST', '/rest/v1/brew_state', rows);
-    _lastPushTime = now;
-    setSyncStatus(true);
-  } catch(e) {
-    console.warn('Supabase push failed:', e.message);
-    setSyncStatus(false);
+let _autoSyncInterval = null;
+
+async function sbGetBrewState() {
+  const res = await fetch(SB_URL + '/rest/v1/brew_state?select=key,value', { headers: SB_HDR });
+  if (!res.ok) throw new Error(await res.text());
+  return await res.json();
+}
+
+async function sbUpsertBrewKey(key, value) {
+  const res = await fetch(SB_URL + '/rest/v1/brew_state', {
+    method: 'POST',
+    headers: { ...SB_HDR, 'Prefer': 'resolution=merge-duplicates,return=minimal' },
+    body: JSON.stringify({ key, value, updated_at: new Date().toISOString() })
+  });
+  if (!res.ok) {
+    const err = await res.text();
+    console.error('Supabase upsert error:', res.status, err);
+    throw new Error(err);
   }
 }
 
-function setSyncStatus(ok) {
-  const dot = document.getElementById('sync-dot');
+function setSyncStatus(msg, color) {
   const lbl = document.getElementById('sync-label');
-  if (!dot) return;
-  dot.style.background = ok ? 'var(--green)' : 'var(--red)';
-  lbl.textContent = ok ? 'Synced' : 'Offline';
+  if (!lbl) return;
+  lbl.textContent = msg || '';
+  lbl.style.color = color || '#9CA3AF';
 }
 
-let _lastPushTime = null;
-let _initialSyncDone = false;
-
-// Poll pull — only apply rows newer than our last push
-async function pullFromSupabase() {
-  try {
-    const rows = await sbFetch('GET', '/rest/v1/brew_state?select=key,value,updated_at');
-    if (!rows || !rows.length) { setSyncStatus(true); return false; }
-    let changed = false;
-    rows.forEach(row => {
-      if (!SYNC_KEYS.includes(row.key)) return;
-      // If we pushed more recently than this row, our data is newer — skip
-      if (_lastPushTime && row.updated_at && row.updated_at <= _lastPushTime) return;
-      const fresh = JSON.stringify(row.value);
-      const current = JSON.stringify(state[row.key]);
-      if (fresh !== current) {
-        state[row.key] = row.value;
-        localStorage.setItem('brew_' + row.key, JSON.stringify(row.value));
-        changed = true;
+function startAutoSync() {
+  if (_autoSyncInterval) clearInterval(_autoSyncInterval);
+  _autoSyncInterval = setInterval(async () => {
+    try {
+      const rows = await sbGetBrewState();
+      let changed = false;
+      rows.forEach(row => {
+        if (!SYNC_KEYS.includes(row.key)) return;
+        const fresh = JSON.stringify(row.value);
+        const current = JSON.stringify(state[row.key]);
+        if (fresh !== current) {
+          state[row.key] = row.value;
+          localStorage.setItem('brew_' + row.key, JSON.stringify(row.value));
+          changed = true;
+        }
+      });
+      if (changed) {
+        setSyncStatus('Updated ↓', '#16A34A');
+        setTimeout(() => setSyncStatus('Live', '#16A34A'), 2000);
+        try { renderNav(); renderContent(); } catch(e) {}
       }
-    });
-    setSyncStatus(true);
-    return changed;
-  } catch(e) {
-    console.warn('Supabase pull failed:', e.message);
-    setSyncStatus(false);
-    return false;
-  }
-}
-
-// Force pull — always apply Supabase data, used on initial load only
-async function pullFromSupabaseForce() {
-  try {
-    const rows = await sbFetch('GET', '/rest/v1/brew_state?select=key,value,updated_at');
-    if (!rows || !rows.length) { setSyncStatus(true); return false; }
-    rows.forEach(row => {
-      if (!SYNC_KEYS.includes(row.key)) return;
-      state[row.key] = row.value;
-      localStorage.setItem('brew_' + row.key, JSON.stringify(row.value));
-    });
-    // Set _lastPushTime to the max updated_at from server so poll doesn't immediately re-apply
-    const maxTs = rows.reduce((m,r)=>r.updated_at>m?r.updated_at:m,'');
-    if (maxTs) _lastPushTime = maxTs;
-    setSyncStatus(true);
-    return true;
-  } catch(e) {
-    console.warn('Supabase initial pull failed:', e.message);
-    setSyncStatus(false);
-    return false;
-  }
-}
-
-let _syncPollTimer = null;
-function startSyncPoll() {
-  if (_syncPollTimer) return;
-  _syncPollTimer = setInterval(async () => {
-    const changed = await pullFromSupabase();
-    if (changed && _initialSyncDone) {
-      renderNav();
-      renderContent();
-      showSyncToast('🔄 Data updated from another device');
+    } catch(e) {
+      // Silent fail for background sync
     }
-  }, 30000); // every 30 seconds
-}
-
-function showSyncToast(msg) {
-  const t = document.getElementById('toast');
-  t.textContent = msg;
-  t.style.background = '#2563EB';
-  t.classList.add('show');
-  setTimeout(() => t.classList.remove('show'), 3000);
+  }, 30000);
 }
 
 // ── Seed Data ─────────────────────────────────────────────────────────────────
@@ -363,15 +298,10 @@ Object.defineProperty(window,'BEERS',{get:function(){return getBeers(false);}});
 // ── State ─────────────────────────────────────────────────────────────────────
 function loadLS(k) { try { return JSON.parse(localStorage.getItem(k)); } catch(e){ return null; } }
 function saveState() {
-  localStorage.setItem('brew_tanks',    JSON.stringify(state.tanks));
-  localStorage.setItem('brew_raw',      JSON.stringify(state.rawMaterials));
-  localStorage.setItem('brew_beer_inv', JSON.stringify(state.beerInventory));
-  localStorage.setItem('brew_schedule', JSON.stringify(state.schedule));
-  localStorage.setItem('brew_logs',     JSON.stringify(state.brewLogs));
-  localStorage.setItem('brew_pos',      JSON.stringify(state.purchaseOrders));
-  localStorage.setItem('brew_stocktakes', JSON.stringify(state.stockTakes));
-  localStorage.setItem('brew_gravity',    JSON.stringify(state.gravityLogs));
-  localStorage.setItem('brew_beers',      JSON.stringify(state.beers));
+  SYNC_KEYS.forEach(key => {
+    localStorage.setItem('brew_' + key, JSON.stringify(state[key]));
+    sbUpsertBrewKey(key, state[key]).catch(e => console.error('Supabase save error:', key, e));
+  });
 }
 
 let state = {
@@ -2874,7 +2804,6 @@ function checkBrewPw() {
     document.getElementById('login-screen').style.display = 'none';
     document.getElementById('app').style.display = 'flex';
     document.getElementById('brew-pw-err').textContent = '';
-    pushToSupabase();
   } else {
     const err = document.getElementById('brew-pw-err');
     err.textContent = 'Incorrect password';
@@ -3216,14 +3145,38 @@ function saveBeer() {
 (function init(){
   document.getElementById('topbar-date').textContent=new Date().toLocaleDateString('en-IN',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
   setTimeout(() => { const pw = document.getElementById('brew-pw'); if (pw) pw.focus(); }, 100);
+
+  // 1. Load from localStorage immediately and render
+  SYNC_KEYS.forEach(key => {
+    try {
+      const v = localStorage.getItem('brew_' + key);
+      if (v) state[key] = JSON.parse(v);
+    } catch(e) {}
+  });
   renderNav(); renderContent();
-  // Pull latest data from Supabase on load, then start polling
-  pullFromSupabaseForce().then(ok => {
-    if (ok) { renderNav(); renderContent(); }
-    setSyncStatus(true);
-    _initialSyncDone = true;
-    startSyncPoll();
-  }).catch(() => { setSyncStatus(false); _initialSyncDone = true; startSyncPoll(); });
+
+  // 2. Sync from Supabase in background — same pattern as bar order app
+  setSyncStatus('Syncing...', '#D4821A');
+  sbGetBrewState().then(rows => {
+    if (rows && rows.length > 0) {
+      rows.forEach(row => {
+        if (!SYNC_KEYS.includes(row.key)) return;
+        state[row.key] = row.value;
+        localStorage.setItem('brew_' + row.key, JSON.stringify(row.value));
+      });
+    } else {
+      // Nothing in Supabase yet — push local state up
+      SYNC_KEYS.forEach(key => sbUpsertBrewKey(key, state[key]).catch(()=>{}));
+    }
+    setSyncStatus('Live', '#16A34A');
+    setTimeout(() => setSyncStatus('', ''), 2000);
+    try { renderNav(); renderContent(); } catch(e) {}
+    startAutoSync();
+  }).catch(e => {
+    console.error('Supabase initial sync error:', e);
+    setSyncStatus('Offline', '#DC2626');
+    startAutoSync();
+  });
 })();
 </script>
 </body>
