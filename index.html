@@ -267,8 +267,22 @@ function isModalOpen() {
 }
 
 function startAutoSync() {
-  if (_autoSyncInterval) clearInterval(_autoSyncInterval);
-  _autoSyncInterval = setInterval(async () => {
+  // Use Supabase Realtime for instant push notifications
+  // Falls back to 30-second poll if Realtime fails
+  let realtimeConnected = false;
+
+  try {
+    const evtSource = new EventSource(
+      `${SB_URL}/realtime/v1/postgres-changes?event=UPDATE&schema=public&table=brew_state&apikey=${SB_KEY}`
+    );
+    evtSource.onopen = () => { realtimeConnected = true; };
+    evtSource.onerror = () => { realtimeConnected = false; };
+  } catch(e) {}
+
+  // Use Supabase Realtime via long-polling channel
+  const channel = `${SB_URL}/realtime/v1`;
+
+  async function syncNow() {
     try {
       const rows = await sbGetBrewState();
       let changed = false;
@@ -287,10 +301,52 @@ function startAutoSync() {
         setTimeout(() => setSyncStatus('', ''), 2000);
         try { renderNav(); renderContent(); } catch(e) {}
       }
-    } catch(e) {
-      // Silent fail for background sync
-    }
-  }, 30000);
+    } catch(e) {}
+  }
+
+  // Realtime via Supabase broadcast/postgres-changes WebSocket
+  try {
+    const wsUrl = `${SB_URL.replace('https','wss')}/realtime/v1/websocket?apikey=${SB_KEY}&vsn=1.0.0`;
+    const ws = new WebSocket(wsUrl);
+
+    ws.onopen = () => {
+      // Join the brew_state table channel
+      ws.send(JSON.stringify({
+        topic: 'realtime:public:brew_state',
+        event: 'phx_join',
+        payload: { config: { broadcast: { self: false }, presence: { key: '' }, postgres_changes: [{ event: '*', schema: 'public', table: 'brew_state' }] } },
+        ref: '1'
+      }));
+      setSyncStatus('Live ⚡', '#16A34A');
+      setTimeout(() => setSyncStatus('', ''), 2000);
+    };
+
+    ws.onmessage = (msg) => {
+      try {
+        const data = JSON.parse(msg.data);
+        if (data.event === 'postgres_changes' || (data.payload && data.payload.data)) {
+          syncNow(); // Pull fresh data immediately when any change comes in
+        }
+      } catch(e) {}
+    };
+
+    ws.onclose = () => {
+      setSyncStatus('', '');
+      // Fallback to polling if WebSocket closes
+      if (_autoSyncInterval) clearInterval(_autoSyncInterval);
+      _autoSyncInterval = setInterval(syncNow, 10000);
+    };
+
+    ws.onerror = () => {
+      if (_autoSyncInterval) clearInterval(_autoSyncInterval);
+      _autoSyncInterval = setInterval(syncNow, 10000);
+    };
+
+  } catch(e) {
+    // WebSocket not available — fall back to 10-second poll
+    if (_autoSyncInterval) clearInterval(_autoSyncInterval);
+    _autoSyncInterval = setInterval(syncNow, 10000);
+  }
 }
 
 // ── Seed Data ─────────────────────────────────────────────────────────────────
