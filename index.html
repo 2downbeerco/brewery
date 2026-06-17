@@ -1952,6 +1952,7 @@ function renderRMInventory() {
         const totalColor = isAll?(critical?'var(--red)':low?'var(--orange)':'var(--text)'):'var(--text)';
         const uid = r.id!=null ? String(r.id) : r.name;
         const expanded = window._rmExpanded!=null && window._rmExpanded===uid;
+        console.log('item:', r.name, 'uid:', uid, 'expanded:', expanded, '_rmExpanded:', window._rmExpanded);
 
         return `
         <div style="border-bottom:1px solid var(--border);">
@@ -2231,8 +2232,9 @@ function renderPOList() {
 
 // ── RM helpers ────────────────────────────────────────────────────────────────
 function toggleRMExpand(id) {
-  const numId = +id;
+  console.log('toggleRMExpand called with:', id, typeof id);
   window._rmExpanded = window._rmExpanded===String(id) ? null : String(id);
+  console.log('_rmExpanded now:', window._rmExpanded);
   renderContent();
 }
 function setRMFilter(f){window._rmFilter=f;window._rmExpanded=null;renderContent();}
