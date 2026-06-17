@@ -1964,17 +1964,18 @@ function renderRMInventory() {
     </div>
 
     <div class="card" style="padding:0;overflow:hidden;">
-      ${items.map(r=>{
+      ${items.map((r,ri)=>{
         const {pct,low,critical,color,total}=rmStatus(r);
         const batches = r.batches||[];
         const totalColor = isAll?(critical?'var(--red)':low?'var(--orange)':'var(--text)'):'var(--text)';
-        const expanded = window._rmExpanded!=null && window._rmExpanded===+r.id;
+        const uid = String(r.id!=null ? r.id : ('idx-'+ri));
+        const expanded = window._rmExpanded!=null && window._rmExpanded===uid;
 
         return `
         <div style="border-bottom:1px solid var(--border);">
           <!-- Item header row -->
           <div style="display:flex;align-items:center;gap:12px;padding:12px 16px;cursor:pointer;${expanded?'background:var(--accent-bg);':''}"
-            onclick="toggleRMExpand(${r.id})">
+            onclick="toggleRMExpand('${uid}')">
             <div style="font-size:13px;font-weight:700;flex:1;">${r.name}
               ${isAll?`<span class="badge badge-gray" style="margin-left:6px;font-size:10px;">${r.category}</span>`:''}
             </div>
@@ -2249,7 +2250,7 @@ function renderPOList() {
 // ── RM helpers ────────────────────────────────────────────────────────────────
 function toggleRMExpand(id) {
   const numId = +id;
-  window._rmExpanded = window._rmExpanded===numId ? null : numId;
+  window._rmExpanded = window._rmExpanded===String(id) ? null : String(id);
   renderContent();
 }
 function setRMFilter(f){window._rmFilter=f;window._rmExpanded=null;renderContent();}
