@@ -261,6 +261,11 @@ function setSyncStatus(msg, color) {
   lbl.style.color = color || '#9CA3AF';
 }
 
+function isModalOpen() {
+  return Array.from(document.querySelectorAll('.modal-overlay'))
+    .some(el => el.style.display !== 'none' && el.style.display !== '');
+}
+
 function startAutoSync() {
   if (_autoSyncInterval) clearInterval(_autoSyncInterval);
   _autoSyncInterval = setInterval(async () => {
@@ -277,9 +282,9 @@ function startAutoSync() {
           changed = true;
         }
       });
-      if (changed) {
+      if (changed && !isModalOpen()) {
         setSyncStatus('Updated ↓', '#16A34A');
-        setTimeout(() => setSyncStatus('Live', '#16A34A'), 2000);
+        setTimeout(() => setSyncStatus('', ''), 2000);
         try { renderNav(); renderContent(); } catch(e) {}
       }
     } catch(e) {
@@ -423,9 +428,22 @@ function stageBadge(stage) {
   return `<span class="badge ${map[stage]||'badge-gray'}">${stage}</span>`;
 }
 function rmStatus(item) {
-  const total = item.category==='Malt' ? (item.warehouseStock||0)+(item.breweryStock||0) : item.stock;
-  const pct = Math.min(100, Math.round(total/(item.reorder*4)*100));
-  const low = total<=item.reorder, critical = total<=item.reorder*0.5;
+  // Total is always sum of all batches
+  let total = 0;
+  if (item.batches && item.batches.length) {
+    item.batches.forEach(b => {
+      if (item.category==='Malt') total += (b.warehouseQty||0)+(b.breweryQty||0);
+      else total += (b.qty||0);
+    });
+  } else {
+    // fallback for legacy records
+    total = item.category==='Malt' ? (item.warehouseStock||0)+(item.breweryStock||0) : (item.stock||0);
+  }
+  // keep stock in sync
+  item.stock = total;
+  const pct = item.reorder>0 ? Math.min(100, Math.round(total/(item.reorder*4)*100)) : 0;
+  const low = item.reorder>0 && total<=item.reorder;
+  const critical = item.reorder>0 && total<=item.reorder*0.5;
   const color = critical?'var(--red)':low?'var(--orange)':'var(--green)';
   return {pct,low,critical,color,total};
 }
@@ -600,23 +618,14 @@ function renderBrewDetail(id) {
 
   // ── Get all batches for an RM from PO history ─────────────────────────────
   function getBatches(rmId) {
-    const batches = [];
-    state.purchaseOrders.forEach(po => {
-      po.items.forEach(item => {
-        if (item.rmId == rmId && item.batchNo) {
-          // avoid duplicates
-          if (!batches.find(b=>b.batchNo===item.batchNo)) {
-            batches.push({
-              batchNo:    item.batchNo,
-              extractLdk: item.extractLdk || null,
-              alphaAcid:  item.alphaAcid  || null,
-              deliveryDate: po.deliveryDate || null,
-            });
-          }
-        }
-      });
-    });
-    return batches;
+    const r = state.rawMaterials.find(x=>x.id==rmId);
+    if (!r || !r.batches) return [];
+    return r.batches.map(b=>({
+      batchNo:     b.batchNo,
+      extractLdk:  b.extractLdk  != null ? b.extractLdk  : null,
+      alphaAcid:   b.alphaAcid   != null ? b.alphaAcid   : null,
+      deliveryDate: b.deliveryDate || null,
+    }));
   }
 
   // ── Ingredient row builder ────────────────────────────────────────────────
@@ -1869,26 +1878,22 @@ function renderRMInventory() {
   const cats=['All',...new Set(state.rawMaterials.map(r=>r.category))];
   const filter=window._rmFilter||'All';
   const items=filter==='All'?state.rawMaterials:state.rawMaterials.filter(r=>r.category===filter);
-  const low=state.rawMaterials.filter(r=>{const {total}=rmStatus(r);return total<=r.reorder&&r.reorder>0;});
+  const isAll=filter==='All', isMaltTab=filter==='Malt', isHopsTab=filter==='Hops', isCatTab=!isAll;
 
-  const isAll = filter==='All';
-  const isMaltTab = filter==='Malt';
-  const isHopsTab = filter==='Hops';
-  const isCatTab  = !isAll;
+  const low=state.rawMaterials.filter(r=>{const {total}=rmStatus(r);return r.reorder>0&&total<=r.reorder;});
 
-  // Total inventory cost — filtered by current tab
   const costItems = isAll ? state.rawMaterials : items;
   const totalCost = costItems.reduce((s,r)=>{
     const {total}=rmStatus(r);
-    return s + (total*(r.lastCost||0));
+    const avgCost = r.batches&&r.batches.length ? r.batches.reduce((a,b)=>a+(b.cost||0),0)/r.batches.length : (r.lastCost||0);
+    return s+(total*avgCost);
   },0);
-  const tickerLabel = isAll ? 'Total Inventory Value' : `${filter} Inventory Value`;
+  const tickerLabel = isAll?'Total Inventory Value':`${filter} Inventory Value`;
 
   return `
     ${low.length?`<div style="background:#FEF3C7;border:1px solid #F59E0B;border-radius:10px;padding:12px 16px;margin-bottom:18px;font-size:13px;color:#92400E;">
       ⚠️ <strong>${low.length} item${low.length>1?'s':''}</strong> at or below reorder level: ${low.map(r=>r.name).join(', ')}</div>`:''}
 
-    <!-- Ticker -->
     <div style="background:var(--sidebar-bg);color:var(--sidebar-active);border-radius:10px;padding:12px 20px;margin-bottom:18px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
       <span style="font-size:12px;font-weight:600;letter-spacing:1px;text-transform:uppercase;opacity:0.7;">${tickerLabel}</span>
       <span style="font-size:22px;font-weight:700;font-variant-numeric:tabular-nums;">₹${totalCost.toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
@@ -1902,101 +1907,152 @@ function renderRMInventory() {
       </div>
     </div>
 
-    <div class="card" style="padding:0;overflow:hidden;"><div class="tbl-wrap"><table class="tbl">
-      <thead><tr>
-        <th>Item</th>
-        ${isAll?'<th>Category</th>':''}
-        ${isMaltTab?'<th>Warehouse</th><th>Brewery</th>':''}
-        <th>Total</th>
-        ${isAll?'<th>Reorder At</th>':''}
-        <th>Last Cost</th>
-        ${isMaltTab?'<th>Batch No.</th><th>Extract LDK</th><th>Last Delivery</th>':''}
-        ${isHopsTab?'<th>Batch No.</th><th>Alpha Acid %</th><th>Last Delivery</th>':''}
-        ${isCatTab&&!isMaltTab&&!isHopsTab?'<th>Batch No.</th><th>Last Delivery</th>':''}
-        ${isCatTab?`<th style="text-align:right;">Actions</th>`:''}
-      </tr></thead>
-      <tbody>${items.map(r=>{
+    <div class="card" style="padding:0;overflow:hidden;">
+      ${items.map(r=>{
         const {pct,low,critical,color,total}=rmStatus(r);
-        const isMalt = r.category==='Malt';
-        const isHops = r.category==='Hops';
+        const batches = r.batches||[];
         const totalColor = isAll?(critical?'var(--red)':low?'var(--orange)':'var(--text)'):'var(--text)';
-        return `<tr>
-          <td><strong>${r.name}</strong></td>
-          ${isAll?`<td><span class="badge badge-gray">${r.category}</span></td>`:''}
-          ${isMaltTab?`
-            <td><span style="font-weight:600;">${r.warehouseStock||0} ${r.unit}</span></td>
-            <td>${r.breweryStock||0} ${r.unit}</td>
-          `:''}
-          <td>
-            <div style="font-weight:700;color:${totalColor};">${total} ${r.unit}</div>
-            ${isAll?`<div class="rm-bar-wrap" style="margin-top:4px;width:80px;"><div class="rm-bar" style="width:${pct}%;background:${color};"></div></div>`:''}
-          </td>
-          ${isAll?`<td style="color:var(--muted);">${r.reorder?r.reorder+' '+r.unit:'—'}</td>`:''}
-          <td style="color:var(--muted);font-size:13px;">${r.lastCost?'₹'+r.lastCost.toFixed(2)+'/'+r.unit:'—'}</td>
-          ${isMaltTab?`
-            <td style="font-size:13px;">${r.lastBatchNo||'<span style="color:var(--muted);">—</span>'}</td>
-            <td style="font-size:13px;">${r.extractLdk!=null&&r.extractLdk!==''?r.extractLdk:'<span style="color:var(--muted);">—</span>'}</td>
-            <td style="font-size:13px;color:var(--muted);">${r.lastDeliveryDate?fmtDate(r.lastDeliveryDate):'—'}</td>
-          `:''}
-          ${isHopsTab?`
-            <td style="font-size:13px;">${r.lastBatchNo||'<span style="color:var(--muted);">—</span>'}</td>
-            <td style="font-size:13px;">${r.alphaAcid!=null&&r.alphaAcid!==''?r.alphaAcid+'%':'<span style="color:var(--muted);">—</span>'}</td>
-            <td style="font-size:13px;color:var(--muted);">${r.lastDeliveryDate?fmtDate(r.lastDeliveryDate):'—'}</td>
-          `:''}
-          ${isCatTab&&!isMaltTab&&!isHopsTab?`
-            <td style="font-size:13px;">${r.lastBatchNo||'<span style="color:var(--muted);">—</span>'}</td>
-            <td style="font-size:13px;color:var(--muted);">${r.lastDeliveryDate?fmtDate(r.lastDeliveryDate):'—'}</td>
-          `:''}
-          ${isCatTab?`<td style="text-align:right;white-space:nowrap;">
-            ${isMalt&&isMaltTab?`<button class="btn btn-sm btn-ghost" onclick="openTransferModal(${r.id})" style="margin-right:4px;">🏭 Transfer</button>`:''}
-            <button class="btn btn-sm btn-ghost" onclick="openEditRM(${r.id})">✏️ Edit</button>
-            <button class="btn btn-sm btn-ghost" onclick="openAdjRM(${r.id})" style="margin-left:4px;">⚖️ Adjust</button>
-          </td>`:''}
-        </tr>`;}).join('')}
-      </tbody>
-    </table></div></div>
+        const expanded = window._rmExpanded===r.id;
+
+        return `
+        <div style="border-bottom:1px solid var(--border);">
+          <!-- Item header row -->
+          <div style="display:flex;align-items:center;gap:12px;padding:12px 16px;cursor:pointer;${expanded?'background:var(--accent-bg);':''}"
+            onclick="toggleRMExpand(${r.id})">
+            <div style="font-size:13px;font-weight:700;flex:1;">${r.name}
+              ${isAll?`<span class="badge badge-gray" style="margin-left:6px;font-size:10px;">${r.category}</span>`:''}
+            </div>
+            <div style="font-weight:700;color:${totalColor};font-size:14px;min-width:80px;text-align:right;">${total} ${r.unit}</div>
+            ${isAll?`<div style="color:var(--muted);font-size:12px;min-width:80px;text-align:right;">${r.reorder?'Reorder: '+r.reorder+' '+r.unit:'—'}</div>`:''}
+            ${isCatTab?`<div style="min-width:60px;text-align:right;">
+              <div class="rm-bar-wrap" style="width:60px;display:inline-block;"><div class="rm-bar" style="width:${pct}%;background:${color};"></div></div>
+            </div>`:''}
+            <div style="color:var(--muted);font-size:18px;width:20px;text-align:center;">${expanded?'▾':'▸'}</div>
+          </div>
+
+          <!-- Expanded batch detail -->
+          ${expanded?`
+          <div style="background:var(--bg);padding:12px 16px 16px;">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:8px;">
+              <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:1px;">${batches.length} Batch${batches.length!==1?'es':''}</div>
+              <div style="display:flex;gap:6px;">
+                ${isCatTab?`<button class="btn btn-ghost btn-sm" onclick="openEditRM(${r.id})">✏️ Edit Item</button>`:''}
+                <button class="btn btn-primary btn-sm" onclick="openAddBatch(${r.id})">+ Add Batch</button>
+              </div>
+            </div>
+            ${batches.length===0?`<div style="color:var(--muted);font-size:13px;">No batches recorded. Add one via Purchase Order or manually.</div>`:`
+            <div class="tbl-wrap"><table class="tbl" style="font-size:13px;">
+              <thead><tr>
+                <th>Batch No.</th>
+                ${isMaltTab?'<th>Warehouse</th><th>Brewery</th>':'<th>Qty</th>'}
+                ${isMaltTab?'<th>Extract LDK</th>':''}
+                ${isHopsTab?'<th>Alpha Acid %</th>':''}
+                <th>Cost/unit</th>
+                <th>Delivery</th>
+                <th></th>
+              </tr></thead>
+              <tbody>
+                ${batches.map((b,bi)=>`<tr>
+                  <td><strong>${b.batchNo||'—'}</strong></td>
+                  ${isMaltTab?`<td>${b.warehouseQty||0} ${r.unit}</td><td>${b.breweryQty||0} ${r.unit}</td>`:`<td>${b.qty||0} ${r.unit}</td>`}
+                  ${isMaltTab?`<td>${b.extractLdk!=null?b.extractLdk:'—'}</td>`:''}
+                  ${isHopsTab?`<td>${b.alphaAcid!=null?b.alphaAcid+'%':'—'}</td>`:''}
+                  <td style="color:var(--muted);">${b.cost?'₹'+b.cost:' —'}</td>
+                  <td style="color:var(--muted);">${b.deliveryDate?fmtDate(b.deliveryDate):'—'}</td>
+                  <td style="white-space:nowrap;">
+                    ${isMaltTab?`<button class="btn btn-ghost btn-sm" onclick="openBatchTransfer(${r.id},${bi})" style="margin-right:4px;">🏭</button>`:''}
+                    <button class="btn btn-ghost btn-sm" onclick="openEditBatch(${r.id},${bi})">✏️</button>
+                    <button class="btn btn-ghost btn-sm" onclick="deleteBatch(${r.id},${bi})" style="margin-left:4px;">🗑</button>
+                  </td>
+                </tr>`).join('')}
+              </tbody>
+            </table></div>`}
+
+            ${isMaltTab&&batches.length?`
+            <div style="margin-top:8px;font-size:12px;color:var(--muted);">
+              Total: Warehouse <strong>${batches.reduce((s,b)=>s+(b.warehouseQty||0),0)} ${r.unit}</strong> · Brewery <strong>${batches.reduce((s,b)=>s+(b.breweryQty||0),0)} ${r.unit}</strong>
+            </div>`:''}
+          </div>`:''}
+        </div>`;}).join('')}
+    </div>
 
     <!-- Add/Edit RM Modal -->
     <div id="rm-modal" class="modal-overlay" style="display:none;" onclick="if(event.target===this)closeRMModal()">
-      <div class="modal-box">
-        <div class="modal-title" id="rm-modal-title">Add Raw Material</div>
+      <div class="modal-box" style="max-width:480px;">
+        <div class="modal-title" id="rm-modal-title">Add Item</div>
         <input type="hidden" id="rmm-id">
         <div class="form-group"><label class="lbl">Item Name</label><input class="inp" id="rmm-name"></div>
         <div class="form-row form-row-3">
           <div class="form-group"><label class="lbl">Category</label>
-            <select class="inp" id="rmm-cat" onchange="toggleMaltFields(this.value)">
+            <select class="inp" id="rmm-cat">
               <option>Malt</option><option>Hops</option><option>Yeast</option><option>Salts++</option><option>Adjuncts</option><option>Gases</option><option>Cleaning</option><option>Other</option>
             </select>
           </div>
           <div class="form-group"><label class="lbl">Unit</label><input class="inp" id="rmm-unit" placeholder="kg/L/pkt"></div>
-          <div class="form-group"><label class="lbl">Reorder At</label><input class="inp" id="rmm-reorder" type="number"></div>
-        </div>
-        <div id="rmm-malt-fields">
-          <div class="form-row form-row-2">
-            <div class="form-group"><label class="lbl">Warehouse Stock</label><input class="inp" id="rmm-warehouse" type="number" step="0.1" value="0"></div>
-            <div class="form-group"><label class="lbl">Brewery Stock</label><input class="inp" id="rmm-brewery" type="number" step="0.1" value="0"></div>
-          </div>
-          <div class="form-row form-row-2">
-            <div class="form-group"><label class="lbl">Last Batch No.</label><input class="inp" id="rmm-batchno" placeholder="e.g. B2025-06"></div>
-            <div class="form-group"><label class="lbl">Extract LDK</label><input class="inp" id="rmm-extract" type="number" step="0.1" placeholder="e.g. 82.5"></div>
-          </div>
-        </div>
-        <div id="rmm-hops-fields" style="display:none;">
-          <div class="form-row form-row-2">
-            <div class="form-group"><label class="lbl">Last Batch No.</label><input class="inp" id="rmm-hops-batchno" placeholder="e.g. HB2025-01"></div>
-            <div class="form-group"><label class="lbl">Alpha Acid %</label><input class="inp" id="rmm-alpha" type="number" step="0.1" placeholder="e.g. 12.5"></div>
-          </div>
-        </div>
-        <div id="rmm-other-batchno-field" style="display:none;">
-          <div class="form-group"><label class="lbl">Last Batch No.</label><input class="inp" id="rmm-other-batchno" placeholder="Batch no."></div>
-        </div>
-        <div id="rmm-std-fields">
-          <div class="form-group"><label class="lbl">Current Stock</label><input class="inp" id="rmm-stock" type="number" step="0.1"></div>
+          <div class="form-group"><label class="lbl">Reorder At</label><input class="inp" id="rmm-reorder" type="number" placeholder="total qty"></div>
         </div>
         <div class="modal-actions">
           <button class="btn btn-ghost" onclick="closeRMModal()">Cancel</button>
           <button class="btn btn-danger btn-sm" id="rmm-delete" onclick="deleteRM()" style="display:none;">Delete</button>
           <button class="btn btn-primary" onclick="saveRM()">Save</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Add/Edit Batch Modal -->
+    <div id="batch-modal" class="modal-overlay" style="display:none;" onclick="if(event.target===this)closeBatchModal()">
+      <div class="modal-box" style="max-width:480px;">
+        <div class="modal-title" id="batch-modal-title">Add Batch</div>
+        <input type="hidden" id="bm-rm-id">
+        <input type="hidden" id="bm-batch-idx">
+        <div id="bm-rm-info" style="font-size:14px;color:var(--muted);margin-bottom:16px;"></div>
+        <div class="form-row form-row-2">
+          <div class="form-group"><label class="lbl">Batch No.</label><input class="inp" id="bm-batchno" placeholder="e.g. B2025-06"></div>
+          <div class="form-group"><label class="lbl">Delivery Date</label><input class="inp" id="bm-delivery" type="date"></div>
+        </div>
+        <div id="bm-malt-fields">
+          <div class="form-row form-row-2">
+            <div class="form-group"><label class="lbl">Warehouse Qty</label><input class="inp" id="bm-warehouse" type="number" step="0.1" value="0"></div>
+            <div class="form-group"><label class="lbl">Brewery Qty</label><input class="inp" id="bm-brewery" type="number" step="0.1" value="0"></div>
+          </div>
+          <div class="form-row form-row-2">
+            <div class="form-group"><label class="lbl">Extract LDK</label><input class="inp" id="bm-extract" type="number" step="0.1"></div>
+            <div class="form-group"><label class="lbl">Cost / unit (₹)</label><input class="inp" id="bm-cost" type="number" step="0.01"></div>
+          </div>
+        </div>
+        <div id="bm-hops-fields" style="display:none;">
+          <div class="form-row form-row-2">
+            <div class="form-group"><label class="lbl">Qty</label><input class="inp" id="bm-qty" type="number" step="0.001"></div>
+            <div class="form-group"><label class="lbl">Alpha Acid %</label><input class="inp" id="bm-alpha" type="number" step="0.1"></div>
+          </div>
+          <div class="form-group"><label class="lbl">Cost / unit (₹)</label><input class="inp" id="bm-hops-cost" type="number" step="0.01"></div>
+        </div>
+        <div id="bm-std-fields" style="display:none;">
+          <div class="form-row form-row-2">
+            <div class="form-group"><label class="lbl">Qty</label><input class="inp" id="bm-std-qty" type="number" step="0.01"></div>
+            <div class="form-group"><label class="lbl">Cost / unit (₹)</label><input class="inp" id="bm-std-cost" type="number" step="0.01"></div>
+          </div>
+        </div>
+        <div class="modal-actions">
+          <button class="btn btn-ghost" onclick="closeBatchModal()">Cancel</button>
+          <button class="btn btn-primary" onclick="saveBatch()">Save Batch</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Batch Transfer Modal (Malt: warehouse → brewery) -->
+    <div id="batch-transfer-modal" class="modal-overlay" style="display:none;" onclick="if(event.target===this)this.style.display='none'">
+      <div class="modal-box" style="max-width:380px;">
+        <div class="modal-title">Transfer to Brewery</div>
+        <input type="hidden" id="bt-rm-id">
+        <input type="hidden" id="bt-batch-idx">
+        <div id="bt-info" style="font-size:14px;color:var(--muted);margin-bottom:16px;"></div>
+        <div class="form-group"><label class="lbl">Quantity to transfer (kg)</label>
+          <input class="inp" id="bt-qty" type="number" step="0.1" placeholder="0">
+        </div>
+        <div class="modal-actions">
+          <button class="btn btn-ghost" onclick="document.getElementById('batch-transfer-modal').style.display='none'">Cancel</button>
+          <button class="btn btn-primary" onclick="applyBatchTransfer()">Transfer</button>
         </div>
       </div>
     </div>
@@ -2022,25 +2078,9 @@ function renderRMInventory() {
           <button class="btn btn-primary" onclick="applyAdj()">Apply</button>
         </div>
       </div>
-    </div>
-
-    <!-- Malt Transfer Modal -->
-    <div id="transfer-modal" class="modal-overlay" style="display:none;" onclick="if(event.target===this)closeTransferModal()">
-      <div class="modal-box" style="max-width:400px;">
-        <div class="modal-title">Transfer Malt to Brewery</div>
-        <input type="hidden" id="tr-id">
-        <div id="tr-info" style="font-size:14px;margin-bottom:16px;color:var(--muted);"></div>
-        <div class="form-group"><label class="lbl">Quantity to transfer (kg)</label>
-          <input class="inp" id="tr-qty" type="number" step="0.1" placeholder="0">
-        </div>
-        <p style="font-size:12px;color:var(--muted);margin-top:-8px;">Moves from Warehouse → Brewery</p>
-        <div class="modal-actions">
-          <button class="btn btn-ghost" onclick="closeTransferModal()">Cancel</button>
-          <button class="btn btn-primary" onclick="applyTransfer()">Transfer</button>
-        </div>
-      </div>
     </div>`;
 }
+
 
 // ── Purchase Orders ────────────────────────────────────────────────────────────
 function renderPOList() {
@@ -2151,22 +2191,20 @@ function renderPOList() {
 }
 
 // ── RM helpers ────────────────────────────────────────────────────────────────
-function toggleMaltFields(cat) {
-  const isMalt = cat==='Malt';
-  const isHops = cat==='Hops';
-  document.getElementById('rmm-malt-fields').style.display       = isMalt?'block':'none';
-  document.getElementById('rmm-hops-fields').style.display       = isHops?'block':'none';
-  document.getElementById('rmm-other-batchno-field').style.display = (!isMalt&&!isHops)?'block':'none';
-  document.getElementById('rmm-std-fields').style.display        = isMalt?'none':'block';
+function toggleRMExpand(id) {
+  window._rmExpanded = window._rmExpanded===id ? null : id;
+  renderContent();
 }
-function setRMFilter(f){window._rmFilter=f;renderContent();}
+function setRMFilter(f){window._rmFilter=f;window._rmExpanded=null;renderContent();}
 
 function openAddRM(){
-  ['rmm-id','rmm-name','rmm-unit','rmm-stock','rmm-reorder','rmm-warehouse','rmm-brewery'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
-  document.getElementById('rm-modal-title').textContent='Add Raw Material';
-  document.getElementById('rmm-delete').style.display='none';
+  document.getElementById('rm-modal-title').textContent='Add Item';
+  document.getElementById('rmm-id').value='';
+  document.getElementById('rmm-name').value='';
   document.getElementById('rmm-cat').value='Malt';
-  toggleMaltFields('Malt');
+  document.getElementById('rmm-unit').value='';
+  document.getElementById('rmm-reorder').value='';
+  document.getElementById('rmm-delete').style.display='none';
   document.getElementById('rm-modal').style.display='flex';
 }
 function openEditRM(id){
@@ -2176,68 +2214,167 @@ function openEditRM(id){
   document.getElementById('rmm-name').value=r.name;
   document.getElementById('rmm-cat').value=r.category;
   document.getElementById('rmm-unit').value=r.unit;
-  document.getElementById('rmm-reorder').value=r.reorder;
+  document.getElementById('rmm-reorder').value=r.reorder||'';
   document.getElementById('rmm-delete').style.display='inline-flex';
-  toggleMaltFields(r.category);
-  if(r.category==='Malt'){
-    document.getElementById('rmm-warehouse').value=r.warehouseStock||0;
-    document.getElementById('rmm-brewery').value=r.breweryStock||0;
-    document.getElementById('rmm-batchno').value=r.lastBatchNo||'';
-    document.getElementById('rmm-extract').value=r.extractLdk!=null?r.extractLdk:'';
-  } else if(r.category==='Hops'){
-    document.getElementById('rmm-stock').value=r.stock;
-    document.getElementById('rmm-hops-batchno').value=r.lastBatchNo||'';
-    document.getElementById('rmm-alpha').value=r.alphaAcid!=null?r.alphaAcid:'';
-  } else {
-    document.getElementById('rmm-stock').value=r.stock;
-    document.getElementById('rmm-other-batchno').value=r.lastBatchNo||'';
-  }
   document.getElementById('rm-modal').style.display='flex';
 }
 function closeRMModal(){document.getElementById('rm-modal').style.display='none';}
 function saveRM(){
   const id=+document.getElementById('rmm-id').value;
-  const cat=document.getElementById('rmm-cat').value;
-  const isMalt=cat==='Malt';
-  const isHops=cat==='Hops';
-  const wh=+document.getElementById('rmm-warehouse').value||0;
-  const br=+document.getElementById('rmm-brewery').value||0;
   const obj={
     name:document.getElementById('rmm-name').value.trim(),
-    category:cat,
+    category:document.getElementById('rmm-cat').value,
     unit:document.getElementById('rmm-unit').value.trim(),
-    reorder:+document.getElementById('rmm-reorder').value,
-    stock: isMalt ? wh+br : +document.getElementById('rmm-stock').value,
-    ...(isMalt ? {
-      warehouseStock:wh, breweryStock:br,
-      lastBatchNo: document.getElementById('rmm-batchno').value.trim()||null,
-      extractLdk:  document.getElementById('rmm-extract').value!==''?+document.getElementById('rmm-extract').value:null,
-    } : isHops ? {
-      lastBatchNo: document.getElementById('rmm-hops-batchno').value.trim()||null,
-      alphaAcid:   document.getElementById('rmm-alpha').value!==''?+document.getElementById('rmm-alpha').value:null,
-    } : {
-      lastBatchNo: document.getElementById('rmm-other-batchno').value.trim()||null,
-    }),
-    lastCost: 0,
+    reorder:+document.getElementById('rmm-reorder').value||0,
   };
   if(!obj.name){toast('Name required',false);return;}
-  if(id){const i=state.rawMaterials.findIndex(x=>x.id===id);state.rawMaterials[i]={...state.rawMaterials[i],...obj};}
-  else{obj.id=state.nextRMId++;state.rawMaterials.push(obj);}
+  if(id){
+    const i=state.rawMaterials.findIndex(x=>x.id===id);
+    state.rawMaterials[i]={...state.rawMaterials[i],...obj};
+  } else {
+    obj.id=state.nextRMId++;
+    obj.stock=0;
+    obj.batches=[];
+    obj.lastCost=0;
+    state.rawMaterials.push(obj);
+  }
   saveState();closeRMModal();renderContent();toast('Saved');
 }
 function deleteRM(){
   const id=+document.getElementById('rmm-id').value;
-  if(!confirm('Delete this item?'))return;
+  if(!confirm('Delete this item and all its batches?'))return;
   state.rawMaterials=state.rawMaterials.filter(x=>x.id!==id);
   saveState();closeRMModal();renderContent();toast('Deleted');
 }
+
+// ── Batch helpers ─────────────────────────────────────────────────────────
+function openAddBatch(rmId){
+  const r=state.rawMaterials.find(x=>x.id===rmId);if(!r)return;
+  document.getElementById('batch-modal-title').textContent='Add Batch — '+r.name;
+  document.getElementById('bm-rm-id').value=rmId;
+  document.getElementById('bm-batch-idx').value='';
+  document.getElementById('bm-rm-info').textContent='';
+  document.getElementById('bm-batchno').value='';
+  document.getElementById('bm-delivery').value=new Date().toISOString().slice(0,10);
+  document.getElementById('bm-warehouse').value='';
+  document.getElementById('bm-brewery').value='';
+  document.getElementById('bm-extract').value='';
+  document.getElementById('bm-cost').value='';
+  document.getElementById('bm-qty').value='';
+  document.getElementById('bm-alpha').value='';
+  document.getElementById('bm-hops-cost').value='';
+  document.getElementById('bm-std-qty').value='';
+  document.getElementById('bm-std-cost').value='';
+  const isMalt=r.category==='Malt', isHops=r.category==='Hops';
+  document.getElementById('bm-malt-fields').style.display=isMalt?'block':'none';
+  document.getElementById('bm-hops-fields').style.display=isHops?'block':'none';
+  document.getElementById('bm-std-fields').style.display=(!isMalt&&!isHops)?'block':'none';
+  document.getElementById('batch-modal').style.display='flex';
+}
+function openEditBatch(rmId, bi){
+  const r=state.rawMaterials.find(x=>x.id===rmId);if(!r)return;
+  const b=r.batches[bi];if(!b)return;
+  document.getElementById('batch-modal-title').textContent='Edit Batch — '+r.name;
+  document.getElementById('bm-rm-id').value=rmId;
+  document.getElementById('bm-batch-idx').value=bi;
+  document.getElementById('bm-rm-info').textContent='';
+  document.getElementById('bm-batchno').value=b.batchNo||'';
+  document.getElementById('bm-delivery').value=b.deliveryDate||'';
+  const isMalt=r.category==='Malt', isHops=r.category==='Hops';
+  document.getElementById('bm-malt-fields').style.display=isMalt?'block':'none';
+  document.getElementById('bm-hops-fields').style.display=isHops?'block':'none';
+  document.getElementById('bm-std-fields').style.display=(!isMalt&&!isHops)?'block':'none';
+  if(isMalt){
+    document.getElementById('bm-warehouse').value=b.warehouseQty||0;
+    document.getElementById('bm-brewery').value=b.breweryQty||0;
+    document.getElementById('bm-extract').value=b.extractLdk!=null?b.extractLdk:'';
+    document.getElementById('bm-cost').value=b.cost||'';
+  } else if(isHops){
+    document.getElementById('bm-qty').value=b.qty||'';
+    document.getElementById('bm-alpha').value=b.alphaAcid!=null?b.alphaAcid:'';
+    document.getElementById('bm-hops-cost').value=b.cost||'';
+  } else {
+    document.getElementById('bm-std-qty').value=b.qty||'';
+    document.getElementById('bm-std-cost').value=b.cost||'';
+  }
+  document.getElementById('batch-modal').style.display='flex';
+}
+function closeBatchModal(){document.getElementById('batch-modal').style.display='none';}
+function saveBatch(){
+  const rmId=+document.getElementById('bm-rm-id').value;
+  const biStr=document.getElementById('bm-batch-idx').value;
+  const bi=biStr!==''?+biStr:-1;
+  const i=state.rawMaterials.findIndex(x=>x.id===rmId);if(i<0)return;
+  const r=state.rawMaterials[i];
+  if(!r.batches) r.batches=[];
+  const isMalt=r.category==='Malt', isHops=r.category==='Hops';
+  const batchNo=document.getElementById('bm-batchno').value.trim();
+  if(!batchNo){toast('Batch no. required',false);return;}
+  const bObj={
+    batchNo,
+    deliveryDate:document.getElementById('bm-delivery').value||null,
+    ...(isMalt?{
+      warehouseQty:+document.getElementById('bm-warehouse').value||0,
+      breweryQty:+document.getElementById('bm-brewery').value||0,
+      extractLdk:document.getElementById('bm-extract').value!==''?+document.getElementById('bm-extract').value:null,
+      cost:+document.getElementById('bm-cost').value||0,
+    }:isHops?{
+      qty:+document.getElementById('bm-qty').value||0,
+      alphaAcid:document.getElementById('bm-alpha').value!==''?+document.getElementById('bm-alpha').value:null,
+      cost:+document.getElementById('bm-hops-cost').value||0,
+    }:{
+      qty:+document.getElementById('bm-std-qty').value||0,
+      cost:+document.getElementById('bm-std-cost').value||0,
+    })
+  };
+  if(bi>=0) r.batches[bi]={...r.batches[bi],...bObj};
+  else r.batches.push(bObj);
+  // Update stock total
+  rmStatus(r);
+  saveState();closeBatchModal();renderContent();toast('Batch saved');
+}
+function deleteBatch(rmId,bi){
+  if(!confirm('Delete this batch?'))return;
+  const i=state.rawMaterials.findIndex(x=>x.id===rmId);if(i<0)return;
+  state.rawMaterials[i].batches.splice(bi,1);
+  rmStatus(state.rawMaterials[i]);
+  saveState();renderContent();toast('Batch deleted');
+}
+
+// ── Malt batch transfer ────────────────────────────────────────────────────
+function openBatchTransfer(rmId,bi){
+  const r=state.rawMaterials.find(x=>x.id===rmId);if(!r)return;
+  const b=r.batches[bi];if(!b)return;
+  document.getElementById('bt-rm-id').value=rmId;
+  document.getElementById('bt-batch-idx').value=bi;
+  document.getElementById('bt-info').innerHTML=`<strong>${r.name}</strong> — Batch ${b.batchNo}<br>
+    Warehouse: <strong>${b.warehouseQty||0} kg</strong> · Brewery: <strong>${b.breweryQty||0} kg</strong>`;
+  document.getElementById('bt-qty').value='';
+  document.getElementById('batch-transfer-modal').style.display='flex';
+}
+function applyBatchTransfer(){
+  const rmId=+document.getElementById('bt-rm-id').value;
+  const bi=+document.getElementById('bt-batch-idx').value;
+  const qty=+document.getElementById('bt-qty').value;
+  const i=state.rawMaterials.findIndex(x=>x.id===rmId);if(i<0)return;
+  const b=state.rawMaterials[i].batches[bi];if(!b)return;
+  if(!qty||qty<=0){toast('Enter a valid quantity',false);return;}
+  if(qty>(b.warehouseQty||0)){toast(`Only ${b.warehouseQty||0} kg in warehouse for this batch`,false);return;}
+  b.warehouseQty=Math.round(((b.warehouseQty||0)-qty)*1000)/1000;
+  b.breweryQty=Math.round(((b.breweryQty||0)+qty)*1000)/1000;
+  document.getElementById('batch-transfer-modal').style.display='none';
+  saveState();renderContent();toast(`${qty} kg transferred to brewery`);
+}
+
+// ── Adjust (legacy / quick adjust on whole item) ──────────────────────────
 function openAdjRM(id){
   const r=state.rawMaterials.find(x=>x.id===id);if(!r)return;
+  const {total}=rmStatus(r);
   document.getElementById('adj-id').value=r.id;
   const isMalt=r.category==='Malt';
-  document.getElementById('adj-info').innerHTML=`<strong>${r.name}</strong>${isMalt?` — Warehouse: <strong>${r.warehouseStock||0} ${r.unit}</strong> · Brewery: <strong>${r.breweryStock||0} ${r.unit}</strong>`:` — Stock: <strong>${r.stock} ${r.unit}</strong>`}`;
+  document.getElementById('adj-info').innerHTML=`<strong>${r.name}</strong> — Total: <strong>${total} ${r.unit}</strong>`;
   document.getElementById('adj-qty').value='';
-  document.getElementById('adj-type').value='add';
+  document.getElementById('adj-type').value='sub';
   document.getElementById('adj-loc-row').style.display=isMalt?'block':'none';
   document.getElementById('adj-modal').style.display='flex';
 }
@@ -2247,38 +2384,23 @@ function applyAdj(){
   const qty=+document.getElementById('adj-qty').value;
   const type=document.getElementById('adj-type').value;
   const loc=document.getElementById('adj-loc').value;
-  const i=state.rawMaterials.findIndex(x=>x.id===id);
+  const i=state.rawMaterials.findIndex(x=>x.id===id);if(i<0)return;
   const r=state.rawMaterials[i];
   const isMalt=r.category==='Malt';
+  // Apply to last batch (FIFO would be ideal but keep simple for now)
+  if(!r.batches||!r.batches.length){toast('No batches to adjust',false);return;}
+  const lastBatch=r.batches[r.batches.length-1];
   function adj(cur,t,q){return t==='add'?Math.round((cur+q)*1000)/1000:t==='sub'?Math.max(0,Math.round((cur-q)*1000)/1000):q;}
   if(isMalt){
-    if(loc==='warehouse') r.warehouseStock=adj(r.warehouseStock||0,type,qty);
-    else r.breweryStock=adj(r.breweryStock||0,type,qty);
-    r.stock=(r.warehouseStock||0)+(r.breweryStock||0);
+    if(loc==='warehouse') lastBatch.warehouseQty=adj(lastBatch.warehouseQty||0,type,qty);
+    else lastBatch.breweryQty=adj(lastBatch.breweryQty||0,type,qty);
   } else {
-    r.stock=adj(r.stock,type,qty);
+    lastBatch.qty=adj(lastBatch.qty||0,type,qty);
   }
+  rmStatus(r);
   saveState();closeAdjModal();renderContent();toast('Stock updated');
 }
-function openTransferModal(id){
-  const r=state.rawMaterials.find(x=>x.id===id);if(!r)return;
-  document.getElementById('tr-id').value=r.id;
-  document.getElementById('tr-info').innerHTML=`<strong>${r.name}</strong><br>Warehouse: <strong>${r.warehouseStock||0} kg</strong> → Brewery: <strong>${r.breweryStock||0} kg</strong>`;
-  document.getElementById('tr-qty').value='';
-  document.getElementById('transfer-modal').style.display='flex';
-}
-function closeTransferModal(){document.getElementById('transfer-modal').style.display='none';}
-function applyTransfer(){
-  const id=+document.getElementById('tr-id').value;
-  const qty=+document.getElementById('tr-qty').value;
-  const i=state.rawMaterials.findIndex(x=>x.id===id);
-  const r=state.rawMaterials[i];
-  if(qty<=0){toast('Enter a valid quantity',false);return;}
-  if(qty>(r.warehouseStock||0)){toast(`Only ${r.warehouseStock||0} kg in warehouse`,false);return;}
-  r.warehouseStock=Math.round(((r.warehouseStock||0)-qty)*1000)/1000;
-  r.breweryStock=Math.round(((r.breweryStock||0)+qty)*1000)/1000;
-  saveState();closeTransferModal();renderContent();toast(`${qty} kg transferred to brewery`);
-}
+
 
 // ── Purchase Order helpers ────────────────────────────────────────────────────
 let _poItems = [];
@@ -2588,10 +2710,10 @@ function startStockTake() {
     name: r.name,
     category: r.category,
     unit: r.unit,
-    expected: +(rmStatus(r).total),
+    expected: rmStatus(r).total,
     actual: null,
     variance: null,
-    lastCost: r.lastCost||0,
+    lastCost: r.batches&&r.batches.length ? r.batches[r.batches.length-1].cost||0 : 0,
   }));
   const st = { id: state.nextSTId++, date: today, status:'In Progress', doneBy:'', lines };
   state.stockTakes.push(st);
@@ -3200,6 +3322,8 @@ function saveBeer() {
   setTimeout(() => { const pw = document.getElementById('brew-pw'); if (pw) pw.focus(); }, 100);
 
   // 1. Load from localStorage immediately and render
+  // Clear old RM data format — batches model is new
+  localStorage.removeItem('brew_rawMaterials');
   SYNC_KEYS.forEach(key => {
     try {
       const v = localStorage.getItem('brew_' + key);
