@@ -1952,7 +1952,6 @@ function renderRMInventory() {
         const totalColor = isAll?(critical?'var(--red)':low?'var(--orange)':'var(--text)'):'var(--text)';
         const uid = r.id!=null ? String(r.id) : r.name;
         const expanded = window._rmExpanded!=null && window._rmExpanded===uid;
-        console.log('item:', r.name, 'uid:', uid, 'expanded:', expanded, '_rmExpanded:', window._rmExpanded);
 
         return `
         <div style="border-bottom:1px solid var(--border);">
@@ -2231,10 +2230,27 @@ function renderPOList() {
 }
 
 // ── RM helpers ────────────────────────────────────────────────────────────────
+function fixRMIds() {
+  // Reassign unique sequential IDs to any RM items that have duplicate IDs
+  const seen = new Set();
+  let maxId = 0;
+  state.rawMaterials.forEach(r => {
+    if (r.id != null) maxId = Math.max(maxId, +r.id);
+  });
+  let nextId = maxId + 1;
+  state.rawMaterials.forEach(r => {
+    const key = String(r.id);
+    if (seen.has(key) || r.id == null) {
+      r.id = nextId++;
+    } else {
+      seen.add(key);
+    }
+  });
+  state.nextRMId = nextId;
+}
+
 function toggleRMExpand(id) {
-  console.log('toggleRMExpand called with:', id, typeof id);
   window._rmExpanded = window._rmExpanded===String(id) ? null : String(id);
-  console.log('_rmExpanded now:', window._rmExpanded);
   renderContent();
 }
 function setRMFilter(f){window._rmFilter=f;window._rmExpanded=null;renderContent();}
@@ -3389,6 +3405,8 @@ function saveBeer() {
     }
     setSyncStatus('Live', '#16A34A');
     setTimeout(() => setSyncStatus('', ''), 2000);
+    fixRMIds();
+    saveState();
     try { renderNav(); renderContent(); } catch(e) {}
     startAutoSync();
   }).catch(e => {
