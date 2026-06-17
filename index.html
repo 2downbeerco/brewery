@@ -267,21 +267,6 @@ function isModalOpen() {
 }
 
 function startAutoSync() {
-  // Use Supabase Realtime for instant push notifications
-  // Falls back to 30-second poll if Realtime fails
-  let realtimeConnected = false;
-
-  try {
-    const evtSource = new EventSource(
-      `${SB_URL}/realtime/v1/postgres-changes?event=UPDATE&schema=public&table=brew_state&apikey=${SB_KEY}`
-    );
-    evtSource.onopen = () => { realtimeConnected = true; };
-    evtSource.onerror = () => { realtimeConnected = false; };
-  } catch(e) {}
-
-  // Use Supabase Realtime via long-polling channel
-  const channel = `${SB_URL}/realtime/v1`;
-
   async function syncNow() {
     try {
       const rows = await sbGetBrewState();
@@ -304,13 +289,12 @@ function startAutoSync() {
     } catch(e) {}
   }
 
-  // Realtime via Supabase broadcast/postgres-changes WebSocket
+  // Realtime via Supabase WebSocket for instant sync
   try {
     const wsUrl = `${SB_URL.replace('https','wss')}/realtime/v1/websocket?apikey=${SB_KEY}&vsn=1.0.0`;
     const ws = new WebSocket(wsUrl);
 
     ws.onopen = () => {
-      // Join the brew_state table channel
       ws.send(JSON.stringify({
         topic: 'realtime:public:brew_state',
         event: 'phx_join',
@@ -325,14 +309,13 @@ function startAutoSync() {
       try {
         const data = JSON.parse(msg.data);
         if (data.event === 'postgres_changes' || (data.payload && data.payload.data)) {
-          syncNow(); // Pull fresh data immediately when any change comes in
+          syncNow();
         }
       } catch(e) {}
     };
 
     ws.onclose = () => {
       setSyncStatus('', '');
-      // Fallback to polling if WebSocket closes
       if (_autoSyncInterval) clearInterval(_autoSyncInterval);
       _autoSyncInterval = setInterval(syncNow, 10000);
     };
@@ -343,7 +326,6 @@ function startAutoSync() {
     };
 
   } catch(e) {
-    // WebSocket not available — fall back to 10-second poll
     if (_autoSyncInterval) clearInterval(_autoSyncInterval);
     _autoSyncInterval = setInterval(syncNow, 10000);
   }
@@ -1968,14 +1950,14 @@ function renderRMInventory() {
         const {pct,low,critical,color,total}=rmStatus(r);
         const batches = r.batches||[];
         const totalColor = isAll?(critical?'var(--red)':low?'var(--orange)':'var(--text)'):'var(--text)';
-        const uid = String(r.id!=null ? r.id : ('idx-'+ri));
+        const uid = r.id!=null ? String(r.id) : r.name;
         const expanded = window._rmExpanded!=null && window._rmExpanded===uid;
 
         return `
         <div style="border-bottom:1px solid var(--border);">
           <!-- Item header row -->
           <div style="display:flex;align-items:center;gap:12px;padding:12px 16px;cursor:pointer;${expanded?'background:var(--accent-bg);':''}"
-            onclick="toggleRMExpand('${uid}')">
+            data-uid="${uid}" onclick="toggleRMExpand(this.dataset.uid)">
             <div style="font-size:13px;font-weight:700;flex:1;">${r.name}
               ${isAll?`<span class="badge badge-gray" style="margin-left:6px;font-size:10px;">${r.category}</span>`:''}
             </div>
