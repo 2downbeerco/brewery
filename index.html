@@ -1913,7 +1913,7 @@ function renderRMInventory() {
         ${isMaltTab?'<th>Batch No.</th><th>Extract LDK</th><th>Last Delivery</th>':''}
         ${isHopsTab?'<th>Batch No.</th><th>Alpha Acid %</th><th>Last Delivery</th>':''}
         ${isCatTab&&!isMaltTab&&!isHopsTab?'<th>Batch No.</th><th>Last Delivery</th>':''}
-        <th style="text-align:right;">Actions</th>
+        ${isCatTab?`<th style="text-align:right;">Actions</th>`:''}
       </tr></thead>
       <tbody>${items.map(r=>{
         const {pct,low,critical,color,total}=rmStatus(r);
@@ -1947,11 +1947,11 @@ function renderRMInventory() {
             <td style="font-size:13px;">${r.lastBatchNo||'<span style="color:var(--muted);">—</span>'}</td>
             <td style="font-size:13px;color:var(--muted);">${r.lastDeliveryDate?fmtDate(r.lastDeliveryDate):'—'}</td>
           `:''}
-          <td style="text-align:right;white-space:nowrap;">
+          ${isCatTab?`<td style="text-align:right;white-space:nowrap;">
             ${isMalt&&isMaltTab?`<button class="btn btn-sm btn-ghost" onclick="openTransferModal(${r.id})" style="margin-right:4px;">🏭 Transfer</button>`:''}
-            <button class="btn btn-sm btn-ghost" onclick="openEditRM(${r.id})">✏️</button>
-            <button class="btn btn-sm btn-ghost" onclick="openAdjRM(${r.id})" style="margin-left:4px;">⚖️</button>
-          </td>
+            <button class="btn btn-sm btn-ghost" onclick="openEditRM(${r.id})">✏️ Edit</button>
+            <button class="btn btn-sm btn-ghost" onclick="openAdjRM(${r.id})" style="margin-left:4px;">⚖️ Adjust</button>
+          </td>`:''}
         </tr>`;}).join('')}
       </tbody>
     </table></div></div>
@@ -1976,6 +1976,19 @@ function renderRMInventory() {
             <div class="form-group"><label class="lbl">Warehouse Stock</label><input class="inp" id="rmm-warehouse" type="number" step="0.1" value="0"></div>
             <div class="form-group"><label class="lbl">Brewery Stock</label><input class="inp" id="rmm-brewery" type="number" step="0.1" value="0"></div>
           </div>
+          <div class="form-row form-row-2">
+            <div class="form-group"><label class="lbl">Last Batch No.</label><input class="inp" id="rmm-batchno" placeholder="e.g. B2025-06"></div>
+            <div class="form-group"><label class="lbl">Extract LDK</label><input class="inp" id="rmm-extract" type="number" step="0.1" placeholder="e.g. 82.5"></div>
+          </div>
+        </div>
+        <div id="rmm-hops-fields" style="display:none;">
+          <div class="form-row form-row-2">
+            <div class="form-group"><label class="lbl">Last Batch No.</label><input class="inp" id="rmm-hops-batchno" placeholder="e.g. HB2025-01"></div>
+            <div class="form-group"><label class="lbl">Alpha Acid %</label><input class="inp" id="rmm-alpha" type="number" step="0.1" placeholder="e.g. 12.5"></div>
+          </div>
+        </div>
+        <div id="rmm-other-batchno-field" style="display:none;">
+          <div class="form-group"><label class="lbl">Last Batch No.</label><input class="inp" id="rmm-other-batchno" placeholder="Batch no."></div>
         </div>
         <div id="rmm-std-fields">
           <div class="form-group"><label class="lbl">Current Stock</label><input class="inp" id="rmm-stock" type="number" step="0.1"></div>
@@ -2140,8 +2153,11 @@ function renderPOList() {
 // ── RM helpers ────────────────────────────────────────────────────────────────
 function toggleMaltFields(cat) {
   const isMalt = cat==='Malt';
-  document.getElementById('rmm-malt-fields').style.display = isMalt?'block':'none';
-  document.getElementById('rmm-std-fields').style.display  = isMalt?'none':'block';
+  const isHops = cat==='Hops';
+  document.getElementById('rmm-malt-fields').style.display       = isMalt?'block':'none';
+  document.getElementById('rmm-hops-fields').style.display       = isHops?'block':'none';
+  document.getElementById('rmm-other-batchno-field').style.display = (!isMalt&&!isHops)?'block':'none';
+  document.getElementById('rmm-std-fields').style.display        = isMalt?'none':'block';
 }
 function setRMFilter(f){window._rmFilter=f;renderContent();}
 
@@ -2166,8 +2182,15 @@ function openEditRM(id){
   if(r.category==='Malt'){
     document.getElementById('rmm-warehouse').value=r.warehouseStock||0;
     document.getElementById('rmm-brewery').value=r.breweryStock||0;
+    document.getElementById('rmm-batchno').value=r.lastBatchNo||'';
+    document.getElementById('rmm-extract').value=r.extractLdk!=null?r.extractLdk:'';
+  } else if(r.category==='Hops'){
+    document.getElementById('rmm-stock').value=r.stock;
+    document.getElementById('rmm-hops-batchno').value=r.lastBatchNo||'';
+    document.getElementById('rmm-alpha').value=r.alphaAcid!=null?r.alphaAcid:'';
   } else {
     document.getElementById('rmm-stock').value=r.stock;
+    document.getElementById('rmm-other-batchno').value=r.lastBatchNo||'';
   }
   document.getElementById('rm-modal').style.display='flex';
 }
@@ -2176,6 +2199,7 @@ function saveRM(){
   const id=+document.getElementById('rmm-id').value;
   const cat=document.getElementById('rmm-cat').value;
   const isMalt=cat==='Malt';
+  const isHops=cat==='Hops';
   const wh=+document.getElementById('rmm-warehouse').value||0;
   const br=+document.getElementById('rmm-brewery').value||0;
   const obj={
@@ -2184,7 +2208,16 @@ function saveRM(){
     unit:document.getElementById('rmm-unit').value.trim(),
     reorder:+document.getElementById('rmm-reorder').value,
     stock: isMalt ? wh+br : +document.getElementById('rmm-stock').value,
-    ...(isMalt ? {warehouseStock:wh,breweryStock:br} : {}),
+    ...(isMalt ? {
+      warehouseStock:wh, breweryStock:br,
+      lastBatchNo: document.getElementById('rmm-batchno').value.trim()||null,
+      extractLdk:  document.getElementById('rmm-extract').value!==''?+document.getElementById('rmm-extract').value:null,
+    } : isHops ? {
+      lastBatchNo: document.getElementById('rmm-hops-batchno').value.trim()||null,
+      alphaAcid:   document.getElementById('rmm-alpha').value!==''?+document.getElementById('rmm-alpha').value:null,
+    } : {
+      lastBatchNo: document.getElementById('rmm-other-batchno').value.trim()||null,
+    }),
     lastCost: 0,
   };
   if(!obj.name){toast('Name required',false);return;}
