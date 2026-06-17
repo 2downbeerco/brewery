@@ -1968,7 +1968,7 @@ function renderRMInventory() {
         const {pct,low,critical,color,total}=rmStatus(r);
         const batches = r.batches||[];
         const totalColor = isAll?(critical?'var(--red)':low?'var(--orange)':'var(--text)'):'var(--text)';
-        const expanded = window._rmExpanded===r.id;
+        const expanded = window._rmExpanded!=null && window._rmExpanded===+r.id;
 
         return `
         <div style="border-bottom:1px solid var(--border);">
@@ -2248,7 +2248,8 @@ function renderPOList() {
 
 // ── RM helpers ────────────────────────────────────────────────────────────────
 function toggleRMExpand(id) {
-  window._rmExpanded = window._rmExpanded===id ? null : id;
+  const numId = +id;
+  window._rmExpanded = window._rmExpanded===numId ? null : numId;
   renderContent();
 }
 function setRMFilter(f){window._rmFilter=f;window._rmExpanded=null;renderContent();}
