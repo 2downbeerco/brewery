@@ -1915,7 +1915,7 @@ function setRMSubTab(t){window._rmSubTab=t;renderContent();}
 function renderRMInventory() {
   const cats=['All',...new Set(state.rawMaterials.map(r=>r.category))];
   const filter=window._rmFilter||'All';
-  const items=filter==='All'?state.rawMaterials:state.rawMaterials.filter(r=>r.category===filter);
+  const items=[...filter==='All'?state.rawMaterials:state.rawMaterials.filter(r=>r.category===filter)].sort((a,b)=>a.name.localeCompare(b.name));
   const isAll=filter==='All', isMaltTab=filter==='Malt', isHopsTab=filter==='Hops', isCatTab=!isAll;
 
   const low=state.rawMaterials.filter(r=>{const {total}=rmStatus(r);return r.reorder>0&&total<=r.reorder;});
@@ -1958,10 +1958,10 @@ function renderRMInventory() {
           <!-- Item header row -->
           <div style="display:flex;align-items:center;gap:12px;padding:12px 16px;cursor:pointer;${expanded?'background:var(--accent-bg);':''}"
             data-uid="${uid}" onclick="toggleRMExpand(this.dataset.uid)">
-            <div style="font-size:13px;font-weight:700;flex:1;">${r.name}
+            <div style="font-size:13px;font-weight:700;flex:1;color:${critical?'var(--red)':low?'var(--orange)':'var(--text)'};">${r.name}
               ${isAll?`<span class="badge badge-gray" style="margin-left:6px;font-size:10px;">${r.category}</span>`:''}
             </div>
-            <div style="font-weight:700;color:${totalColor};font-size:14px;min-width:80px;text-align:right;">${total} ${r.unit}</div>
+            <div style="font-weight:700;color:${critical?'var(--red)':low?'var(--orange)':'var(--text)'};font-size:14px;min-width:80px;text-align:right;">${total} ${r.unit}</div>
             ${isAll?`<div style="color:var(--muted);font-size:12px;min-width:80px;text-align:right;">${r.reorder?'Reorder: '+r.reorder+' '+r.unit:'—'}</div>`:''}
             ${isCatTab?`<div style="min-width:60px;text-align:right;">
               <div class="rm-bar-wrap" style="width:60px;display:inline-block;"><div class="rm-bar" style="width:${pct}%;background:${color};"></div></div>
