@@ -1661,7 +1661,7 @@ function renderTanks() {
             </div>
             ${t.since?`<div class="tank-days">Day ${ds} · since ${fmtDate(t.since)}</div>`:''}
             ${t.temp!=null?`<div class="tank-days">🌡️ ${t.temp}°C</div>`:''}
-            ${latestG?`<div class="tank-days" style="color:var(--blue);">${latestG.sg}°P <span style="font-size:10px;">(${fmtDate(latestG.date)})</span></div>`:''}
+            ${latestG?`<div class="tank-days" style="color:var(--blue);">${latestG.plato||latestG.sg}°P <span style="font-size:10px;">(${fmtDate(latestG.date)})</span></div>`:''}
             ${t.stage==='Fermenting'&&gLog.length>1?`<div style="font-size:10px;color:var(--muted);margin-top:2px;">${gLog.length} gravity readings</div>`:''}
           ` : `
             <div class="tank-empty-label" style="margin-top:8px;">Empty</div>
@@ -1738,7 +1738,7 @@ function openTankDetail(id) {
           <tbody>
             ${gLog.map((g,i)=>`<tr>
               <td>${fmtDate(g.date)}</td>
-              <td><strong>${g.sg}°P</strong></td>
+              <td><strong>${g.plato||g.sg}°P</strong></td>
               <td>${g.temp!=null?g.temp:'—'}</td>
               <td style="color:var(--muted);">${g.note||''}</td>
               <td><button class="del-btn" onclick="removeGravityLog('${id}',${i})">✕</button></td>
@@ -1822,16 +1822,16 @@ function updateTankField(id, field, val) {
 
 function addGravityLog(tankId) {
   const date = document.getElementById('glog-date').value;
-  const sg   = +document.getElementById('glog-sg').value;
+  const plato = +document.getElementById('glog-sg').value;
   const temp = document.getElementById('glog-temp').value !== '' ? +document.getElementById('glog-temp').value : null;
   const note = document.getElementById('glog-note').value.trim();
-  if (!date || !sg) { toast('Date and SG required', false); return; }
+  if (!date || !plato) { toast('Date and °Plato required', false); return; }
   if (!state.gravityLogs[tankId]) state.gravityLogs[tankId] = [];
-  state.gravityLogs[tankId].push({ date, sg, temp, note });
+  state.gravityLogs[tankId].push({ date, plato, temp, note });
   state.gravityLogs[tankId].sort((a,b)=>a.date.localeCompare(b.date));
   // Update tank's current gravity
   const i = state.tanks.findIndex(x=>x.id===tankId);
-  if (i>=0) state.tanks[i].gravity = sg;
+  if (i>=0) state.tanks[i].gravity = plato;
   saveState();
   openTankDetail(tankId); // refresh modal
 }
@@ -3201,7 +3201,7 @@ function openBeerBatches(beerCode) {
       // Lifecycle steps
       const steps = [
         { label:'Brewed',       done: !!log.date,                 date: log.date,                  detail: `${log.targetVol}L · Batch ${log.batchNo||'—'}` },
-        { label:'Fermenting',   done: !!tank && tank.stage!=='Empty', date: tank?.since,            detail: gLog.length ? `${gLog.length} gravity readings · Last: SG ${gLog[gLog.length-1]?.sg}` : 'No gravity readings yet' },
+        { label:'Fermenting',   done: !!tank && tank.stage!=='Empty', date: tank?.since,            detail: gLog.length ? `${gLog.length} gravity readings · Last: ${gLog[gLog.length-1]?.plato||gLog[gLog.length-1]?.sg}°P` : 'No gravity readings yet' },
         { label:'Conditioning', done: ['Conditioning','Carbonating','Ready'].includes(tank?.stage), date: null, detail: '' },
         { label:'Carbonating',  done: ['Carbonating','Ready'].includes(tank?.stage)||!!tank?.carbonationVol, date: tank?.carbonationDate, detail: tank?.carbonationVol ? `${tank.carbonationVol} vol CO₂` : '' },
         { label:'Ready',        done: tank?.stage==='Ready'||!!tank?.readyDate, date: tank?.readyDate, detail: '' },
@@ -3285,7 +3285,7 @@ function openBatchDetail(logId) {
         <tbody>${gLog.map(g=>`<tr>
           <td>${fmtDate(g.date)}</td>
           <td>${tank?.since?daysSince(tank.since)-(daysSince(g.date)||0)+daysSince(g.date):'—'}</td>
-          <td><strong>${g.sg}°P</strong></td>
+          <td><strong>${g.plato||g.sg}°P</strong></td>
           <td>${g.temp!=null?g.temp+'°C':'—'}</td>
           <td style="color:var(--muted);">${g.note||''}</td>
         </tr>`).join('')}</tbody>
@@ -3303,7 +3303,7 @@ function openBatchDetail(logId) {
       row('Tank', tank?.name||'—') +
       row('Stage', tank?.stage||log.status) +
       row('Current Temp', tank?.temp!=null?tank.temp+'°C':'—') +
-      row('Latest SG', gLog.length?gLog[gLog.length-1].sg:'—')
+      row('Latest °Plato', gLog.length?(gLog[gLog.length-1].plato||gLog[gLog.length-1].sg)+'°P':'—')
     )}
 
     <div style="display:flex;gap:8px;flex-wrap:wrap;">
