@@ -513,7 +513,7 @@ function renderDashboard() {
   if (lowStock>0) alerts.push({type:'warn', msg:`${lowStock} raw material${lowStock>1?'s':''} at or below reorder level`});
   state.tanks.filter(t=>t.stage==='Ready').forEach(t=>alerts.push({type:'info',msg:`${t.name} (${beerName(t.beer)}) is ready for kegging`}));
   state.tanks.filter(t=>t.stage==='Fermenting'&&daysSince(t.since)>=7).forEach(t=>
-    alerts.push({type:'info',msg:`${t.name} has been fermenting ${daysSince(t.since)} days — check gravity`}));
+    alerts.push({type:'info',msg:`${t.name} has been fermenting ${daysSince(t.since)} days — check °Plato`}));
 
   return `
     <div class="grid4">
@@ -993,7 +993,7 @@ function renderBrewDetail(id) {
     const s6 = stepCard('🪣','Wort Transfer to Boil Kettle', ex.transferKettleDone, `
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px;">
         ${tf('transferKettleStart','Transfer Start Time','HH:MM')}
-        ${tn('transferKettleStartGravity','Gravity at Start','1.050','0.001')}
+        ${tn('transferKettleStartGravity','°Plato at Start','e.g. 12.5','0.1')}
       </div>
       <!-- Running samples -->
       <div style="font-size:12px;font-weight:700;margin-bottom:6px;">Running Samples (every 15 min)</div>
@@ -1002,7 +1002,7 @@ function renderBrewDetail(id) {
           <div style="display:grid;grid-template-columns:60px 80px 80px 1fr 24px;gap:6px;align-items:center;margin-bottom:6px;">
             ${tf('transferSample_'+i+'_time','Time','HH:MM')}
             ${tn('transferSample_'+i+'_vol','Vol in Kettle (L)','','1')}
-            ${tn('transferSample_'+i+'_gravity','Gravity','1.050','0.001')}
+            ${tn('transferSample_'+i+'_gravity','°Plato','e.g. 12.5','0.1')}
             ${tf('transferSample_'+i+'_note','Note','')}
             <button class="del-btn" onclick="removeExSample(${id},'transferSamples',${i})">✕</button>
           </div>`).join('')}
@@ -1022,7 +1022,7 @@ function renderBrewDetail(id) {
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;">
         ${tf('transferKettleEnd','Transfer End Time','HH:MM')}
-        ${tn('finalRunGravity','Final Run Gravity','1.010','0.001')}
+        ${tn('finalRunGravity','Final Run (°Plato)','e.g. 5.0','0.1')}
         ${tf('transferKettleNote','Notes','')}
       </div>`
     );
@@ -1044,7 +1044,7 @@ function renderBrewDetail(id) {
     const s7 = stepCard('🔥','Boil', ex.boilDone, `
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:10px;">
         ${tf('boilStart','Boil Start Time','HH:MM')}
-        ${tn('preboilGravity','Pre-boil Gravity','1.040','0.001')}
+        ${tn('preboilGravity','Pre-boil (°Plato)','e.g. 10.5','0.1')}
         ${tn('preboilPH','Pre-boil pH','5.4','0.01')}
       </div>
       ${hopAdditions?`<div style="font-size:12px;font-weight:700;margin-bottom:6px;">Hop Additions</div>${hopAdditions}`:''}
@@ -1087,7 +1087,7 @@ function renderBrewDetail(id) {
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;">
         ${tf('yeastPitchTime','Pitch Time','HH:MM')}
         ${tn('pitchTempActual','Wort Temp at Pitch (°C)','20','0.1')}
-        ${tn('ogActual','OG (actual)','1.058','0.001')}
+        ${tn('ogActual','OG (°Plato)','e.g. 14.0','0.1')}
       </div>
       <div style="margin-top:8px;">${tf('yeastNote','Notes / rehydration details','')}</div>`
     );
@@ -1661,7 +1661,7 @@ function renderTanks() {
             </div>
             ${t.since?`<div class="tank-days">Day ${ds} · since ${fmtDate(t.since)}</div>`:''}
             ${t.temp!=null?`<div class="tank-days">🌡️ ${t.temp}°C</div>`:''}
-            ${latestG?`<div class="tank-days" style="color:var(--blue);">SG ${latestG.sg} <span style="font-size:10px;">(${fmtDate(latestG.date)})</span></div>`:''}
+            ${latestG?`<div class="tank-days" style="color:var(--blue);">${latestG.sg}°P <span style="font-size:10px;">(${fmtDate(latestG.date)})</span></div>`:''}
             ${t.stage==='Fermenting'&&gLog.length>1?`<div style="font-size:10px;color:var(--muted);margin-top:2px;">${gLog.length} gravity readings</div>`:''}
           ` : `
             <div class="tank-empty-label" style="margin-top:8px;">Empty</div>
@@ -1734,11 +1734,11 @@ function openTankDetail(id) {
       </div>
       ${gLog.length ? `
         <div class="tbl-wrap" style="margin-bottom:10px;"><table class="tbl" style="font-size:13px;">
-          <thead><tr><th>Date</th><th>SG</th><th>Temp (°C)</th><th>Notes</th><th></th></tr></thead>
+          <thead><tr><th>Date</th><th>°Plato</th><th>Temp (°C)</th><th>Notes</th><th></th></tr></thead>
           <tbody>
             ${gLog.map((g,i)=>`<tr>
               <td>${fmtDate(g.date)}</td>
-              <td><strong>${g.sg}</strong></td>
+              <td><strong>${g.sg}°P</strong></td>
               <td>${g.temp!=null?g.temp:'—'}</td>
               <td style="color:var(--muted);">${g.note||''}</td>
               <td><button class="del-btn" onclick="removeGravityLog('${id}',${i})">✕</button></td>
@@ -1747,7 +1747,7 @@ function openTankDetail(id) {
         </table></div>` : '<div style="color:var(--muted);font-size:13px;margin-bottom:10px;">No gravity readings yet.</div>'}
       <div style="background:var(--bg);border-radius:8px;padding:12px;display:grid;grid-template-columns:1fr 80px 80px 1fr auto;gap:8px;align-items:end;">
         <div><label class="lbl" style="font-size:10px;">Date</label><input class="inp inp-sm" type="date" id="glog-date" value="${new Date().toISOString().slice(0,10)}"></div>
-        <div><label class="lbl" style="font-size:10px;">SG</label><input class="inp inp-sm" type="number" step="0.001" id="glog-sg" placeholder="1.012"></div>
+        <div><label class="lbl" style="font-size:10px;">°Plato</label><input class="inp inp-sm" type="number" step="0.1" id="glog-sg" placeholder="e.g. 12.5"></div>
         <div><label class="lbl" style="font-size:10px;">Temp (°C)</label><input class="inp inp-sm" type="number" step="0.1" id="glog-temp" placeholder="20"></div>
         <div><label class="lbl" style="font-size:10px;">Notes</label><input class="inp inp-sm" id="glog-note" placeholder="Observations..."></div>
         <button class="btn btn-primary btn-sm" onclick="addGravityLog('${id}')">Add</button>
@@ -3281,11 +3281,11 @@ function openBatchDetail(logId) {
     ${section('🌡️ Fermentation',
       (tank ? row('Tank', tank.name) + row('Fermenting since', fmtDate(tank.since)) : '<div style="color:var(--muted);font-size:13px;">Not yet assigned to a tank.</div>') +
       (gLog.length ? `<div class="tbl-wrap" style="margin-top:10px;"><table class="tbl" style="font-size:13px;">
-        <thead><tr><th>Date</th><th>Day</th><th>SG</th><th>Temp</th><th>Notes</th></tr></thead>
+        <thead><tr><th>Date</th><th>Day</th><th>°Plato</th><th>Temp</th><th>Notes</th></tr></thead>
         <tbody>${gLog.map(g=>`<tr>
           <td>${fmtDate(g.date)}</td>
           <td>${tank?.since?daysSince(tank.since)-(daysSince(g.date)||0)+daysSince(g.date):'—'}</td>
-          <td><strong>${g.sg}</strong></td>
+          <td><strong>${g.sg}°P</strong></td>
           <td>${g.temp!=null?g.temp+'°C':'—'}</td>
           <td style="color:var(--muted);">${g.note||''}</td>
         </tr>`).join('')}</tbody>
