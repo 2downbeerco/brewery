@@ -356,22 +356,22 @@ function loadLS(k) { try { return JSON.parse(localStorage.getItem(k)); } catch(e
 function computeBreweryBeers() {
   const result = [];
 
-  // 1. Cold room kegs — combine 20L + 50L into one entry per beer per batch label
+  // 1. Cold room kegs — one entry per batch per beer
   state.beerInventory.forEach(inv => {
     if (!inv.beer) return;
     const beerObj = state.beers.find(b => b.code === inv.beer);
     if (!beerObj || beerObj.active === false) return;
-    const totalLitres = (inv.kegs20 * 20) + (inv.kegs50 * 50);
-    if (totalLitres <= 0) return;
-    result.push({
-      beer:     inv.beer,
-      batch:    inv.batchLabel || (inv.beer + '-CR'),
-      litres:   totalLitres,
-      brewDate: inv.brewDate || '',
-      inactive: false,
-      source:   'coldroom',
-      kegs20:   inv.kegs20,
-      kegs50:   inv.kegs50,
+    (inv.batches||[]).forEach(b => {
+      const litres = (b.kegs20||0)*20 + (b.kegs50||0)*50;
+      if (litres <= 0) return;
+      result.push({
+        beer:    inv.beer,
+        batch:   b.batchNo || (inv.beer + '-CR'),
+        litres,
+        brewDate: b.brewDate || '',
+        inactive: false,
+        source:  'coldroom',
+      });
     });
   });
 
@@ -440,11 +440,10 @@ let state = {
   ],
   rawMaterials: loadLS('brew_raw') || [],
   beerInventory: loadLS('brew_beer_inv') || [
-    { id:1, beer:'BB', kegs20:8,  kegs50:2, litres:260, location:'Cold Room' },
-    { id:2, beer:'GR', kegs20:4,  kegs50:0, litres:80,  location:'Cold Room' },
-    { id:3, beer:'MP', kegs20:0,  kegs50:0, litres:0,   location:'Cold Room' },
-    { id:4, beer:'DC', kegs20:12, kegs50:3, litres:390, location:'Cold Room' },
-    { id:5, beer:'OW', kegs20:6,  kegs50:1, litres:170, location:'Cold Room' },
+    { beer:'BB', batches:[ { batchNo:'52', litres:410 } ] },
+    { beer:'MP', batches:[ { batchNo:'42', litres:150 } ] },
+    { beer:'DC', batches:[ { batchNo:'25', litres:160 } ] },
+    { beer:'OW', batches:[ { batchNo:'4',  litres:190 } ] },
   ],
   schedule: loadLS('brew_schedule') || [
     { id:1, date:'2025-06-18', beer:'GR', vol:1000, notes:'Scale up grain by 5%',   status:'Planned' },
@@ -2965,28 +2964,26 @@ function openStockTakeView(id) {
 }
 
 // ── Beer Inventory ────────────────────────────────────────────────────────────
-function renderBeerInv() {
-  // Cold room inventory
-  const coldRoomLitres = state.beerInventory.reduce((s,b)=>s+b.litres,0);
-  const coldRoomKegs   = state.beerInventory.reduce((s,b)=>s+b.kegs20+b.kegs50,0);
+function beerInvTotalLitres(invItem) {
+  if (!invItem || !invItem.batches) return 0;
+  return invItem.batches.reduce((s,b)=>s+(b.litres||0),0);
+}
 
-  // Ready tanks
+function renderBeerInv() {
   const readyTanks = state.tanks.filter(t=>t.stage==='Ready'&&t.beer&&t.vol>0);
   const tankLitres = readyTanks.reduce((s,t)=>s+(t.vol||0),0);
-
+  const coldRoomLitres = state.beerInventory.reduce((s,inv)=>s+beerInvTotalLitres(inv),0);
   const totalLitres = coldRoomLitres + tankLitres;
 
-  // All active beer codes
   const activeCodes = [...new Set([
     ...state.beerInventory.map(b=>b.beer),
     ...readyTanks.map(t=>t.beer)
-  ])].filter(Boolean);
+  ])].filter(Boolean).sort((a,b)=>beerName(a).localeCompare(beerName(b)));
 
   return `
-    <!-- Stats -->
     <div class="grid4" style="margin-bottom:20px;">
       <div class="stat-card"><div class="stat-num">${totalLitres}L</div><div class="stat-lbl">Total Available</div><div class="stat-sub">Cold Room + Ready Tanks</div></div>
-      <div class="stat-card"><div class="stat-num">${coldRoomLitres}L</div><div class="stat-lbl">Cold Room</div><div class="stat-sub">${coldRoomKegs} keg${coldRoomKegs!==1?'s':''}</div></div>
+      <div class="stat-card"><div class="stat-num">${coldRoomLitres}L</div><div class="stat-lbl">Cold Room</div><div class="stat-sub">${state.beerInventory.reduce((s,inv)=>s+(inv.batches||[]).length,0)} batch${state.beerInventory.reduce((s,inv)=>s+(inv.batches||[]).length,0)!==1?'es':''}</div></div>
       <div class="stat-card"><div class="stat-num">${tankLitres}L</div><div class="stat-lbl">Ready in Tanks</div><div class="stat-sub">${readyTanks.length} tank${readyTanks.length!==1?'s':''}</div></div>
       <div class="stat-card" style="background:var(--sidebar-bg);border:none;">
         <div style="font-size:11px;font-weight:600;color:rgba(245,166,35,0.7);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">Bar Order App</div>
@@ -2995,36 +2992,43 @@ function renderBeerInv() {
       </div>
     </div>
 
-    <div style="display:flex;justify-content:flex-end;margin-bottom:14px;">
-      <button class="btn btn-primary" onclick="openEditInv()">✏️ Update Cold Room</button>
-    </div>
-
-    <!-- Per-beer summary -->
+    <!-- Per-beer table -->
     <div class="card" style="padding:0;overflow:hidden;margin-bottom:20px;">
-      <div style="padding:14px 18px;background:var(--bg);border-bottom:1px solid var(--border);font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:1px;">
-        Total Inventory by Beer
+      <div style="padding:14px 18px;background:var(--bg);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;">
+        <span style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:1px;">Cold Room Inventory</span>
+        <button class="btn btn-primary btn-sm" onclick="openAddBeerInvBatch()">+ Add Batch</button>
       </div>
       <div class="tbl-wrap"><table class="tbl">
-        <thead><tr><th>Beer</th><th>Cold Room (20L)</th><th>Cold Room (50L)</th><th>Cold Room Total</th><th>Ready in Tank</th><th>Grand Total</th></tr></thead>
-        <tbody>${activeCodes.map(code=>{
-          const inv = state.beerInventory.find(b=>b.beer===code) || {kegs20:0,kegs50:0,litres:0};
-          const tanks = readyTanks.filter(t=>t.beer===code);
-          const tankL = tanks.reduce((s,t)=>s+(t.vol||0),0);
-          const grandTotal = inv.litres + tankL;
-          const bObj = beer(code);
-          return `<tr>
-            <td><div style="display:flex;align-items:center;gap:8px;"><div class="beer-dot" style="background:${beerColor(code)}"></div><strong>${beerName(code)}</strong></div></td>
-            <td>${inv.kegs20} × 20L = ${inv.kegs20*20}L</td>
-            <td>${inv.kegs50} × 50L = ${inv.kegs50*50}L</td>
-            <td><strong>${inv.litres}L</strong></td>
-            <td>${tankL>0?`${tanks.map(t=>`${t.name} (${t.vol}L)`).join(', ')}`:'—'}</td>
-            <td><strong style="font-size:15px;">${grandTotal}L</strong></td>
-          </tr>`;}).join('')}
+        <thead><tr>
+          <th>Beer</th><th>Batch No.</th><th>Litres</th><th></th>
+        </tr></thead>
+        <tbody>
+          ${state.beerInventory.map((inv,ii)=>{
+            const batches = inv.batches||[];
+            const beerTotal = beerInvTotalLitres(inv);
+            return batches.map((b,bi)=>`<tr>
+              <td>${bi===0?`<div style="display:flex;align-items:center;gap:8px;"><div class="beer-dot" style="background:${beerColor(inv.beer)}"></div><strong>${beerName(inv.beer)}</strong></div>`:'<span style="color:var(--muted);padding-left:24px;">↳</span>'}</td>
+              <td><span style="font-family:monospace;font-weight:600;color:var(--accent);">${b.batchNo||'—'}</span></td>
+              <td>
+                <input class="inp inp-sm" type="number" min="0" step="0.1" value="${b.litres||0}" style="width:90px;"
+                  onchange="updateBeerInvField(${ii},${bi},'litres',+this.value)">
+                <span style="font-size:12px;color:var(--muted);margin-left:4px;">L</span>
+              </td>
+              <td style="white-space:nowrap;">
+                <button class="btn btn-ghost btn-sm" onclick="openEditBeerInvBatch(${ii},${bi})">✏️</button>
+                <button class="btn btn-ghost btn-sm" onclick="deleteBeerInvBatch(${ii},${bi})" style="margin-left:4px;">🗑</button>
+              </td>
+            </tr>`).join('') +
+            (batches.length>1?`<tr style="background:var(--bg);">
+              <td colspan="4" style="text-align:right;font-size:12px;color:var(--muted);padding:4px 14px;">Total for ${beerName(inv.beer)}</td>
+              <td><strong style="color:var(--accent);">${beerTotal}L</strong></td><td></td>
+            </tr>`:'');
+          }).join('')}
         </tbody>
       </table></div>
     </div>
 
-    <!-- Ready tanks detail -->
+    <!-- Ready tanks -->
     ${readyTanks.length?`
     <div class="card" style="padding:0;overflow:hidden;margin-bottom:20px;">
       <div style="padding:14px 18px;background:var(--bg);border-bottom:1px solid var(--border);font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:1px;">
@@ -3043,44 +3047,114 @@ function renderBeerInv() {
       </table></div>
     </div>`:''}
 
-    <!-- Update cold room modal -->
-    <div id="inv-modal" class="modal-overlay" style="display:none;" onclick="if(event.target===this)closeInvModal()">
-      <div class="modal-box">
-        <div class="modal-title">Update Cold Room Inventory</div>
-        <p style="font-size:13px;color:var(--muted);margin-bottom:20px;">Enter current keg counts in the cold room for each beer.</p>
-        ${state.beerInventory.map(b=>`
-          <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap;">
-            <div class="beer-dot" style="background:${beerColor(b.beer)};width:12px;height:12px;flex-shrink:0;"></div>
-            <div style="min-width:140px;font-size:14px;font-weight:600;">${beerName(b.beer)}</div>
-            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-              <input class="inp" type="number" id="inv-20-${b.beer}" value="${b.kegs20}" style="width:70px;">
-              <span style="font-size:12px;color:var(--muted);">×20L</span>
-              <input class="inp" type="number" id="inv-50-${b.beer}" value="${b.kegs50}" style="width:70px;">
-              <span style="font-size:12px;color:var(--muted);">×50L</span>
-            </div>
-            <div style="display:flex;align-items:center;gap:6px;margin-left:auto;">
-              <span style="font-size:12px;color:var(--muted);">Batch label:</span>
-              <input class="inp inp-sm" id="inv-batch-${b.beer}" value="${b.batchLabel||''}" placeholder="e.g. BB-2025-06" style="width:130px;">
-            </div>
-          </div>`).join('')}
+    <!-- Grand total by beer -->
+    <div class="card" style="padding:0;overflow:hidden;">
+      <div style="padding:14px 18px;background:var(--bg);border-bottom:1px solid var(--border);font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:1px;">
+        Total by Beer (Cold Room + Tanks)
+      </div>
+      <div class="tbl-wrap"><table class="tbl">
+        <thead><tr><th>Beer</th><th>Cold Room</th><th>Ready in Tank</th><th>Grand Total</th></tr></thead>
+        <tbody>${activeCodes.map(code=>{
+          const inv = state.beerInventory.find(b=>b.beer===code);
+          const crL = inv ? beerInvTotalLitres(inv) : 0;
+          const tks = readyTanks.filter(t=>t.beer===code);
+          const tkL = tks.reduce((s,t)=>s+(t.vol||0),0);
+          return `<tr>
+            <td><div style="display:flex;align-items:center;gap:8px;"><div class="beer-dot" style="background:${beerColor(code)}"></div><strong>${beerName(code)}</strong></div></td>
+            <td>${crL}L</td>
+            <td>${tkL>0?tks.map(t=>`${t.name} (${t.vol}L)`).join(', '):'—'}</td>
+            <td><strong style="font-size:15px;">${crL+tkL}L</strong></td>
+          </tr>`;}).join('')}
+        </tbody>
+      </table></div>
+    </div>
+
+    <!-- Add/Edit Batch Modal -->
+    <div id="beer-inv-modal" class="modal-overlay" style="display:none;" onclick="if(event.target===this)closeBeerInvModal()">
+      <div class="modal-box" style="max-width:480px;">
+        <div class="modal-title" id="beer-inv-modal-title">Add Cold Room Batch</div>
+        <input type="hidden" id="bim-inv-idx">
+        <input type="hidden" id="bim-batch-idx">
+        <div class="form-row form-row-2">
+          <div class="form-group"><label class="lbl">Beer</label>
+            <select class="inp" id="bim-beer">
+              ${getBeers(true).map(b=>`<option value="${b.code}">${b.name}</option>`).join('')}
+            </select>
+          </div>
+          <div class="form-group"><label class="lbl">Batch No.</label>
+            <input class="inp" id="bim-batchno" placeholder="e.g. 52">
+          </div>
+        </div>
+        <div class="form-group"><label class="lbl">Litres</label>
+          <input class="inp" id="bim-litres" type="number" min="0" step="0.1" placeholder="e.g. 150">
+        </div>
         <div class="modal-actions">
-          <button class="btn btn-ghost" onclick="closeInvModal()">Cancel</button>
-          <button class="btn btn-primary" onclick="saveInv()">Save & Sync</button>
+          <button class="btn btn-ghost" onclick="closeBeerInvModal()">Cancel</button>
+          <button class="btn btn-primary" onclick="saveBeerInvBatch()">Save</button>
         </div>
       </div>
     </div>`;
 }
-function openEditInv(){document.getElementById('inv-modal').style.display='flex';}
-function closeInvModal(){document.getElementById('inv-modal').style.display='none';}
-function saveInv(){
-  state.beerInventory.forEach(b=>{
-    const k20=+document.getElementById(`inv-20-${b.beer}`).value||0;
-    const k50=+document.getElementById(`inv-50-${b.beer}`).value||0;
-    b.kegs20=k20; b.kegs50=k50; b.litres=k20*20+k50*50;
-    const bl=document.getElementById(`inv-batch-${b.beer}`);
-    if(bl) b.batchLabel=bl.value.trim()||null;
-  });
-  saveState(); closeInvModal(); renderContent(); toast('Inventory updated & synced');
+
+function openAddBeerInvBatch() {
+  document.getElementById('beer-inv-modal-title').textContent = 'Add Cold Room Batch';
+  document.getElementById('bim-inv-idx').value = '';
+  document.getElementById('bim-batch-idx').value = '';
+  document.getElementById('bim-beer').value = getBeers(true)[0]?.code||'';
+  document.getElementById('bim-batchno').value = '';
+  document.getElementById('bim-litres').value = '';
+  document.getElementById('beer-inv-modal').style.display = 'flex';
+}
+
+function openEditBeerInvBatch(ii, bi) {
+  const inv = state.beerInventory[ii];
+  const b = inv.batches[bi];
+  document.getElementById('beer-inv-modal-title').textContent = 'Edit Batch';
+  document.getElementById('bim-inv-idx').value = ii;
+  document.getElementById('bim-batch-idx').value = bi;
+  document.getElementById('bim-beer').value = inv.beer;
+  document.getElementById('bim-batchno').value = b.batchNo||'';
+  document.getElementById('bim-litres').value = b.litres||0;
+  document.getElementById('beer-inv-modal').style.display = 'flex';
+}
+
+function closeBeerInvModal() { document.getElementById('beer-inv-modal').style.display='none'; }
+
+function saveBeerInvBatch() {
+  const beer = document.getElementById('bim-beer').value;
+  const batchNo = document.getElementById('bim-batchno').value.trim();
+  const litres = +document.getElementById('bim-litres').value||0;
+  const ii = document.getElementById('bim-inv-idx').value;
+  const bi = document.getElementById('bim-batch-idx').value;
+
+  if (!batchNo) { toast('Batch no. required', false); return; }
+
+  if (ii !== '') {
+    // Edit existing
+    state.beerInventory[+ii].batches[+bi] = { batchNo, litres };
+  } else {
+    // Add new — find or create inv entry for this beer
+    let invIdx = state.beerInventory.findIndex(x=>x.beer===beer);
+    if (invIdx < 0) {
+      state.beerInventory.push({ beer, batches:[] });
+      invIdx = state.beerInventory.length-1;
+    }
+    if (!state.beerInventory[invIdx].batches) state.beerInventory[invIdx].batches = [];
+    state.beerInventory[invIdx].batches.push({ batchNo, litres });
+  }
+  saveState(); closeBeerInvModal(); renderContent(); toast('Saved');
+}
+
+function updateBeerInvField(ii, bi, field, val) {
+  state.beerInventory[ii].batches[bi][field] = val;
+  saveState(); renderContent();
+}
+
+function deleteBeerInvBatch(ii, bi) {
+  if (!confirm('Remove this batch from cold room?')) return;
+  state.beerInventory[ii].batches.splice(bi, 1);
+  if (!state.beerInventory[ii].batches.length) state.beerInventory.splice(ii, 1);
+  saveState(); renderContent(); toast('Removed');
 }
 
 
