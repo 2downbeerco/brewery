@@ -1709,7 +1709,7 @@ function renderTanks() {
     <div class="tank-grid">
       ${tanks.map(t=>{
         const ds  = daysSince(t.since);
-        const pct = t.cap ? Math.round((t.vol||0)/t.cap*100) : 0;
+        const pct = (t.batchVol||t.cap) ? Math.round((t.vol||0)/(t.batchVol||t.cap)*100) : 0;
         const sc  = stageColors[t.stage] || '#9CA3AF';
         const gLog = (state.gravityLogs[t.id]||[]);
         const latestG = gLog.length ? gLog[gLog.length-1] : null;
@@ -1726,7 +1726,7 @@ function renderTanks() {
               <div class="tank-beer">${beerName(t.beer)}</div>
             </div>
             ${t.batchNo?`<div style="font-size:11px;color:var(--muted);margin-top:2px;">Batch: ${t.batchNo}</div>`:''}
-            <div class="tank-vol">${t.vol||0}L / ${t.cap}L</div>
+            <div class="tank-vol">${t.vol||0}L / ${t.batchVol||t.cap}L</div>
             <div class="fill-bar-wrap"><div class="fill-bar" style="width:${pct}%;background:${beerColor(t.beer)};"></div></div>
             <div style="margin-top:10px;display:flex;align-items:center;gap:6px;">
               <div class="tank-stage-dot" style="background:${sc}"></div>
@@ -1738,7 +1738,7 @@ function renderTanks() {
             ${t.stage==='Fermenting'&&gLog.length>1?`<div style="font-size:10px;color:var(--muted);margin-top:2px;">${gLog.length} gravity readings</div>`:''}
           ` : `
             <div class="tank-empty-label" style="margin-top:8px;">Empty</div>
-            <div style="font-size:12px;color:var(--muted);margin-top:4px;">${t.cap}L capacity</div>
+            <div style="font-size:12px;color:var(--muted);margin-top:4px;">${t.batchVol?`Batch: ${t.batchVol}L · `:""}Tank cap: ${t.cap}L</div>
             <div style="font-size:11px;color:var(--muted);margin-top:4px;">${t.type==='Bright Beer'?'Bright Beer':'Fermenter/Unitank'}</div>
           `}
         </div>`;}).join('')}
@@ -1772,7 +1772,8 @@ function renderTanks() {
           <div class="form-group"><label class="lbl">Batch No.</label><input class="inp" id="tm-batchno" placeholder="e.g. BB-2025-06"></div>
         </div>
         <div class="form-row form-row-2">
-          <div class="form-group"><label class="lbl">Volume (L)</label><input class="inp" id="tm-vol" type="number"></div>
+          <div class="form-group"><label class="lbl">Current Vol (L)</label><input class="inp" id="tm-vol" type="number"></div>
+          <div class="form-group"><label class="lbl">Batch Size (L)</label><input class="inp" id="tm-batchvol" type="number" placeholder="Total litres brewed"></div>
           <div class="form-group"><label class="lbl">Stage</label>
             <select class="inp" id="tm-stage">
               <option>Empty</option><option>Fermenting</option><option>Conditioning</option>
@@ -1847,7 +1848,7 @@ function openTankDetail(id) {
     <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:20px;gap:12px;">
       <div>
         <div style="font-size:20px;font-weight:700;">${t.name}</div>
-        <div style="font-size:13px;color:var(--muted);">${t.type==='Bright Beer'?'Bright Beer Tank':'Fermenter/Unitank'} · ${t.cap}L</div>
+        <div style="font-size:13px;color:var(--muted);">${t.type==='Bright Beer'?'Bright Beer Tank':'Fermenter/Unitank'} · ${t.cap}L capacity${t.batchVol?` · Batch: ${t.batchVol}L`:''}</div>
       </div>
       <div style="display:flex;gap:8px;align-items:center;">
         <span class="badge" style="background:${sc}20;color:${sc};font-size:12px;">${t.stage}</span>
@@ -1918,7 +1919,7 @@ function removeGravityLog(tankId, idx) {
 
 function setTankFilter(f){window._tankFilter=f;renderContent();}
 function openAddTank(){
-  ['tm-id','tm-name','tm-vol','tm-since','tm-temp','tm-batchno'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+  ['tm-id','tm-name','tm-vol','tm-batchvol','tm-since','tm-temp','tm-batchno'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';}); 
   document.getElementById('tm-cap').value='1000';
   document.getElementById('tank-modal-title').textContent='Add Tank';
   document.getElementById('tm-delete').style.display='none';
@@ -1936,6 +1937,7 @@ function editTank(id){
   document.getElementById('tm-beer').value=t.beer||'';
   document.getElementById('tm-batchno').value=t.batchNo||'';
   document.getElementById('tm-vol').value=t.vol||0;
+  document.getElementById('tm-batchvol').value=t.batchVol||'';
   document.getElementById('tm-stage').value=t.stage;
   document.getElementById('tm-since').value=t.since||'';
   document.getElementById('tm-temp').value=t.temp!=null?t.temp:'';
@@ -1953,6 +1955,7 @@ function saveTank(){
     beer:document.getElementById('tm-beer').value||null,
     batchNo:document.getElementById('tm-batchno').value.trim()||null,
     vol:+document.getElementById('tm-vol').value||0,
+    batchVol:+document.getElementById('tm-batchvol').value||null,
     stage:document.getElementById('tm-stage').value,
     since:document.getElementById('tm-since').value||null,
     temp:document.getElementById('tm-temp').value!==''?+document.getElementById('tm-temp').value:null,
