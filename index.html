@@ -3082,10 +3082,10 @@ function renderBeerInv() {
         🛢️ Ready in Tanks
       </div>
       <div class="tbl-wrap"><table class="tbl">
-        <thead><tr><th>Tank</th><th>Beer</th><th>Batch</th><th>Volume</th><th>Since</th></tr></thead>
+        <thead><tr><th>Beer</th><th>Tank</th><th>Batch</th><th>Volume</th><th>Since</th></tr></thead>
         <tbody>${readyTanks.map(t=>`<tr>
+          <td><div style="display:flex;align-items:center;gap:6px;"><div class="beer-dot" style="background:${beerColor(t.beer)}"></div><strong>${beerName(t.beer)}</strong></div></td>
           <td><strong>${t.name}</strong></td>
-          <td><div style="display:flex;align-items:center;gap:6px;"><div class="beer-dot" style="background:${beerColor(t.beer)}"></div>${beerName(t.beer)}</div></td>
           <td style="color:var(--muted);">${t.batchNo||'—'}</td>
           <td><strong>${t.vol}L</strong></td>
           <td style="color:var(--muted);">${fmtDate(t.since)}</td>
