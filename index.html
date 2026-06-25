@@ -405,28 +405,50 @@ function saveState() {
   });
 
   // Also push breweryBeers to bar order app's kegs table (__brewery_beers__ record)
-  // NOTE: Auto-push to bar order kegs table disabled to prevent data loss
-  // Use the manual Restore button in Beer Inventory tab instead
-  // pushBreweryBeersToKegs(state.breweryBeers);
+  // Safe push to bar order app — merges brew ops inventory without overwriting bar order deductions
+  pushBreweryBeersToKegs(state.breweryBeers).catch(e => console.warn('Bar order sync failed:', e.message));
 }
 
 async function pushBreweryBeersToKegs(breweryBeers) {
+  if (!breweryBeers || !breweryBeers.length) return;
   try {
-    const res = await fetch(SB_URL + '/rest/v1/kegs', {
+    // 1. Read current breweryBeers from bar order app
+    const res = await fetch(SB_URL + '/rest/v1/kegs?select=id,data&id=eq.__brewery_beers__', { headers: SB_HDR });
+    const rows = await res.json();
+    const existing = rows[0]?.data?.breweryBeers || [];
+
+    // 2. Safe merge rules:
+    //    - New batch (not in bar order yet) → add it
+    //    - Existing active batch → only increase litres, never reduce (bar order manages reductions)
+    //    - Inactive/consumed batches → never touch
+    const merged = [...existing];
+
+    breweryBeers.forEach(brewBatch => {
+      const idx = merged.findIndex(b => b.beer === brewBatch.beer && String(b.batch) === String(brewBatch.batch));
+      if (idx < 0) {
+        // New batch — add it
+        merged.push({ ...brewBatch, inactive: false });
+      } else if (!merged[idx].inactive) {
+        // Active batch — only update litres upward (stock added), never reduce
+        if (brewBatch.litres > merged[idx].litres) {
+          merged[idx].litres = brewBatch.litres;
+        }
+        // Update source metadata
+        merged[idx].source   = brewBatch.source;
+        merged[idx].tankId   = brewBatch.tankId   || null;
+        merged[idx].tankName = brewBatch.tankName || null;
+      }
+      // Inactive batches — skip entirely
+    });
+
+    // 3. Push merged array back
+    await fetch(SB_URL + '/rest/v1/kegs', {
       method: 'POST',
       headers: { ...SB_HDR, 'Prefer': 'resolution=merge-duplicates,return=minimal' },
-      body: JSON.stringify({
-        id: '__brewery_beers__',
-        data: { breweryBeers },
-        updated_at: new Date().toISOString()
-      })
+      body: JSON.stringify({ id: '__brewery_beers__', data: { breweryBeers: merged }, updated_at: new Date().toISOString() })
     });
-    if (!res.ok) {
-      const err = await res.text();
-      console.warn('breweryBeers push to kegs failed:', err);
-    }
   } catch(e) {
-    console.warn('breweryBeers push error:', e.message);
+    console.warn('pushBreweryBeersToKegs error:', e.message);
   }
 }
 
