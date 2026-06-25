@@ -3035,7 +3035,7 @@ function renderBeerInv() {
         <div class="stat-card"><div class="stat-num">${coldRoomLitres}L</div><div class="stat-lbl">Cold Room</div><div class="stat-sub">${state.beerInventory.reduce((s,inv)=>s+(inv.batches||[]).length,0)} batch${state.beerInventory.reduce((s,inv)=>s+(inv.batches||[]).length,0)!==1?'es':''}</div></div>
         <div class="stat-card"><div class="stat-num">${tankLitres}L</div><div class="stat-lbl">Ready in Tanks</div><div class="stat-sub">${readyTanks.length} tank${readyTanks.length!==1?'s':''}</div></div>
         <div class="stat-card"><div class="stat-num">${totalLitres}L</div><div class="stat-lbl">Total Available</div><div class="stat-sub">Cold Room + Tanks</div></div>
-        <div class="stat-card"><div class="stat-num">${inProcess.length}</div><div class="stat-lbl">In Process</div><div class="stat-sub" style="line-height:1.6;">${inProcessBeers.length?inProcessBeers.map(n=>`<span style="display:inline-block;background:var(--accent-bg);color:var(--accent);border-radius:4px;padding:1px 7px;font-size:11px;margin:1px 2px;">${n}</span>`).join(''):'None'}</div></div>
+        <div class="stat-card"><div class="stat-num">${inProcess.reduce((s,t)=>s+(t.vol||0),0)}L</div><div class="stat-lbl">In Process</div><div class="stat-sub" style="line-height:1.6;">${inProcessBeers.length?inProcessBeers.map(n=>`<span style="display:inline-block;background:var(--accent-bg);color:var(--accent);border-radius:4px;padding:1px 7px;font-size:11px;margin:1px 2px;">${n}</span>`).join(''):'None'}</div></div>
       </div>`;
     })()}
 
