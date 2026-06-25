@@ -231,7 +231,7 @@ const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJ
 const SB_HDR = { 'Content-Type': 'application/json', 'apikey': SB_KEY, 'Authorization': 'Bearer ' + SB_KEY };
 
 const SYNC_KEYS = ['tanks','rawMaterials','beerInventory','schedule','brewLogs',
-                   'purchaseOrders','stockTakes','beers','gravityLogs'];
+                   'purchaseOrders','stockTakes','beers','gravityLogs','breweryBeers'];
 
 let _autoSyncInterval = null;
 
@@ -350,11 +350,82 @@ Object.defineProperty(window,'BEERS',{get:function(){return getBeers(false);}});
 
 // ── State ─────────────────────────────────────────────────────────────────────
 function loadLS(k) { try { return JSON.parse(localStorage.getItem(k)); } catch(e){ return null; } }
+// ── Compute breweryBeers for bar order app ────────────────────────────────
+// Format: [{beer, batch, litres, brewDate, inactive}]
+// Sources: Cold Room kegs + Ready tanks (by volume)
+function computeBreweryBeers() {
+  const result = [];
+
+  // 1. Cold room kegs — combine 20L + 50L into one entry per beer per batch label
+  state.beerInventory.forEach(inv => {
+    if (!inv.beer) return;
+    const beerObj = state.beers.find(b => b.code === inv.beer);
+    if (!beerObj || beerObj.active === false) return;
+    const totalLitres = (inv.kegs20 * 20) + (inv.kegs50 * 50);
+    if (totalLitres <= 0) return;
+    result.push({
+      beer:     inv.beer,
+      batch:    inv.batchLabel || (inv.beer + '-CR'),
+      litres:   totalLitres,
+      brewDate: inv.brewDate || '',
+      inactive: false,
+      source:   'coldroom',
+      kegs20:   inv.kegs20,
+      kegs50:   inv.kegs50,
+    });
+  });
+
+  // 2. Ready tanks — each tank is a separate batch entry
+  state.tanks.forEach(tank => {
+    if (tank.stage !== 'Ready' || !tank.beer || !tank.vol) return;
+    const beerObj = state.beers.find(b => b.code === tank.beer);
+    if (!beerObj || beerObj.active === false) return;
+    result.push({
+      beer:     tank.beer,
+      batch:    tank.batchNo || (tank.beer + '-' + tank.id),
+      litres:   tank.vol || 0,
+      brewDate: tank.since || '',
+      inactive: false,
+      source:   'tank',
+      tankId:   tank.id,
+      tankName: tank.name,
+    });
+  });
+
+  return result;
+}
+
 function saveState() {
+  // Recompute breweryBeers before syncing
+  state.breweryBeers = computeBreweryBeers();
+
   SYNC_KEYS.forEach(key => {
     localStorage.setItem('brew_' + key, JSON.stringify(state[key]));
     sbUpsertBrewKey(key, state[key]).catch(e => console.error('Supabase save error:', key, e));
   });
+
+  // Also push breweryBeers to bar order app's kegs table (__brewery_beers__ record)
+  pushBreweryBeersToKegs(state.breweryBeers);
+}
+
+async function pushBreweryBeersToKegs(breweryBeers) {
+  try {
+    const res = await fetch(SB_URL + '/rest/v1/kegs', {
+      method: 'POST',
+      headers: { ...SB_HDR, 'Prefer': 'resolution=merge-duplicates,return=minimal' },
+      body: JSON.stringify({
+        id: '__brewery_beers__',
+        data: { breweryBeers },
+        updated_at: new Date().toISOString()
+      })
+    });
+    if (!res.ok) {
+      const err = await res.text();
+      console.warn('breweryBeers push to kegs failed:', err);
+    }
+  } catch(e) {
+    console.warn('breweryBeers push error:', e.message);
+  }
 }
 
 let state = {
@@ -385,6 +456,7 @@ let state = {
   // status: Draft | In Progress | Completed
   // inventoryDeducted: bool — true once stock has been deducted
   brewLogs: loadLS('brew_logs') || [],
+  breweryBeers: loadLS('brew_breweryBeers') || [],
   purchaseOrders: loadLS('brew_pos') || [],
   beers: loadLS('brew_beers') || BEERS_SEED,
   gravityLogs: loadLS('brew_gravity') || {},
@@ -2894,51 +2966,106 @@ function openStockTakeView(id) {
 
 // ── Beer Inventory ────────────────────────────────────────────────────────────
 function renderBeerInv() {
-  const total=state.beerInventory.reduce((s,b)=>s+b.litres,0);
-  const totalKegs=state.beerInventory.reduce((s,b)=>s+b.kegs20+b.kegs50,0);
-  return `
-    <div class="grid4" style="margin-bottom:20px;">
-      <div class="stat-card"><div class="stat-num">${total}L</div><div class="stat-lbl">Total Beer in Cold Room</div></div>
-      <div class="stat-card"><div class="stat-num">${totalKegs}</div><div class="stat-lbl">Total Kegs</div></div>
-      <div class="stat-card"><div class="stat-num">${state.beerInventory.reduce((s,b)=>s+b.kegs20,0)}</div><div class="stat-lbl">20L Kegs</div></div>
-      <div class="stat-card"><div class="stat-num">${state.beerInventory.reduce((s,b)=>s+b.kegs50,0)}</div><div class="stat-lbl">50L Kegs</div></div>
-    </div>
-    <div style="display:flex;justify-content:flex-end;margin-bottom:14px;">
-      <button class="btn btn-primary" onclick="openEditInv()">✏️ Update Stock</button>
-    </div>
-    <div class="card" style="padding:0;overflow:hidden;"><div class="tbl-wrap"><table class="tbl">
-      <thead><tr><th>Beer</th><th>Style</th><th>20L Kegs</th><th>50L Kegs</th><th>Total Litres</th><th>Stock Level</th></tr></thead>
-      <tbody>${state.beerInventory.map(b=>{
-        const bObj=beer(b.beer);
-        const level=b.litres===0?'Out of Stock':b.litres<80?'Low':'OK';
-        const lc=b.litres===0?'badge-red':b.litres<80?'badge-orange':'badge-green';
-        return `<tr>
-          <td><div style="display:flex;align-items:center;gap:8px;"><div class="beer-dot" style="background:${beerColor(b.beer)}"></div><strong>${beerName(b.beer)}</strong></div></td>
-          <td style="color:var(--muted);">${bObj?.style||'—'}</td>
-          <td>${b.kegs20}</td><td>${b.kegs50}</td>
-          <td><strong>${b.litres}L</strong></td>
-          <td><span class="badge ${lc}">${level}</span></td>
-        </tr>`;}).join('')}</tbody>
-    </table></div></div>
+  // Cold room inventory
+  const coldRoomLitres = state.beerInventory.reduce((s,b)=>s+b.litres,0);
+  const coldRoomKegs   = state.beerInventory.reduce((s,b)=>s+b.kegs20+b.kegs50,0);
 
+  // Ready tanks
+  const readyTanks = state.tanks.filter(t=>t.stage==='Ready'&&t.beer&&t.vol>0);
+  const tankLitres = readyTanks.reduce((s,t)=>s+(t.vol||0),0);
+
+  const totalLitres = coldRoomLitres + tankLitres;
+
+  // All active beer codes
+  const activeCodes = [...new Set([
+    ...state.beerInventory.map(b=>b.beer),
+    ...readyTanks.map(t=>t.beer)
+  ])].filter(Boolean);
+
+  return `
+    <!-- Stats -->
+    <div class="grid4" style="margin-bottom:20px;">
+      <div class="stat-card"><div class="stat-num">${totalLitres}L</div><div class="stat-lbl">Total Available</div><div class="stat-sub">Cold Room + Ready Tanks</div></div>
+      <div class="stat-card"><div class="stat-num">${coldRoomLitres}L</div><div class="stat-lbl">Cold Room</div><div class="stat-sub">${coldRoomKegs} keg${coldRoomKegs!==1?'s':''}</div></div>
+      <div class="stat-card"><div class="stat-num">${tankLitres}L</div><div class="stat-lbl">Ready in Tanks</div><div class="stat-sub">${readyTanks.length} tank${readyTanks.length!==1?'s':''}</div></div>
+      <div class="stat-card" style="background:var(--sidebar-bg);border:none;">
+        <div style="font-size:11px;font-weight:600;color:rgba(245,166,35,0.7);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">Bar Order App</div>
+        <div style="font-size:12px;color:rgba(245,166,35,0.9);">✓ Synced automatically</div>
+        <div style="font-size:11px;color:rgba(200,206,221,0.5);margin-top:4px;">Updates on every save</div>
+      </div>
+    </div>
+
+    <div style="display:flex;justify-content:flex-end;margin-bottom:14px;">
+      <button class="btn btn-primary" onclick="openEditInv()">✏️ Update Cold Room</button>
+    </div>
+
+    <!-- Per-beer summary -->
+    <div class="card" style="padding:0;overflow:hidden;margin-bottom:20px;">
+      <div style="padding:14px 18px;background:var(--bg);border-bottom:1px solid var(--border);font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:1px;">
+        Total Inventory by Beer
+      </div>
+      <div class="tbl-wrap"><table class="tbl">
+        <thead><tr><th>Beer</th><th>Cold Room (20L)</th><th>Cold Room (50L)</th><th>Cold Room Total</th><th>Ready in Tank</th><th>Grand Total</th></tr></thead>
+        <tbody>${activeCodes.map(code=>{
+          const inv = state.beerInventory.find(b=>b.beer===code) || {kegs20:0,kegs50:0,litres:0};
+          const tanks = readyTanks.filter(t=>t.beer===code);
+          const tankL = tanks.reduce((s,t)=>s+(t.vol||0),0);
+          const grandTotal = inv.litres + tankL;
+          const bObj = beer(code);
+          return `<tr>
+            <td><div style="display:flex;align-items:center;gap:8px;"><div class="beer-dot" style="background:${beerColor(code)}"></div><strong>${beerName(code)}</strong></div></td>
+            <td>${inv.kegs20} × 20L = ${inv.kegs20*20}L</td>
+            <td>${inv.kegs50} × 50L = ${inv.kegs50*50}L</td>
+            <td><strong>${inv.litres}L</strong></td>
+            <td>${tankL>0?`${tanks.map(t=>`${t.name} (${t.vol}L)`).join(', ')}`:'—'}</td>
+            <td><strong style="font-size:15px;">${grandTotal}L</strong></td>
+          </tr>`;}).join('')}
+        </tbody>
+      </table></div>
+    </div>
+
+    <!-- Ready tanks detail -->
+    ${readyTanks.length?`
+    <div class="card" style="padding:0;overflow:hidden;margin-bottom:20px;">
+      <div style="padding:14px 18px;background:var(--bg);border-bottom:1px solid var(--border);font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:1px;">
+        🛢️ Ready in Tanks
+      </div>
+      <div class="tbl-wrap"><table class="tbl">
+        <thead><tr><th>Tank</th><th>Beer</th><th>Batch</th><th>Volume</th><th>Since</th></tr></thead>
+        <tbody>${readyTanks.map(t=>`<tr>
+          <td><strong>${t.name}</strong></td>
+          <td><div style="display:flex;align-items:center;gap:6px;"><div class="beer-dot" style="background:${beerColor(t.beer)}"></div>${beerName(t.beer)}</div></td>
+          <td style="color:var(--muted);">${t.batchNo||'—'}</td>
+          <td><strong>${t.vol}L</strong></td>
+          <td style="color:var(--muted);">${fmtDate(t.since)}</td>
+        </tr>`).join('')}
+        </tbody>
+      </table></div>
+    </div>`:''}
+
+    <!-- Update cold room modal -->
     <div id="inv-modal" class="modal-overlay" style="display:none;" onclick="if(event.target===this)closeInvModal()">
       <div class="modal-box">
-        <div class="modal-title">Update Beer Inventory</div>
-        <p style="font-size:13px;color:var(--muted);margin-bottom:20px;">Enter current keg counts in cold room for each beer.</p>
+        <div class="modal-title">Update Cold Room Inventory</div>
+        <p style="font-size:13px;color:var(--muted);margin-bottom:20px;">Enter current keg counts in the cold room for each beer.</p>
         ${state.beerInventory.map(b=>`
-          <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap;">
             <div class="beer-dot" style="background:${beerColor(b.beer)};width:12px;height:12px;flex-shrink:0;"></div>
-            <div style="flex:1;font-size:14px;font-weight:600;">${beerName(b.beer)}</div>
-            <div style="display:flex;align-items:center;gap:8px;">
+            <div style="min-width:140px;font-size:14px;font-weight:600;">${beerName(b.beer)}</div>
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
               <input class="inp" type="number" id="inv-20-${b.beer}" value="${b.kegs20}" style="width:70px;">
               <span style="font-size:12px;color:var(--muted);">×20L</span>
               <input class="inp" type="number" id="inv-50-${b.beer}" value="${b.kegs50}" style="width:70px;">
               <span style="font-size:12px;color:var(--muted);">×50L</span>
             </div>
+            <div style="display:flex;align-items:center;gap:6px;margin-left:auto;">
+              <span style="font-size:12px;color:var(--muted);">Batch label:</span>
+              <input class="inp inp-sm" id="inv-batch-${b.beer}" value="${b.batchLabel||''}" placeholder="e.g. BB-2025-06" style="width:130px;">
+            </div>
           </div>`).join('')}
         <div class="modal-actions">
           <button class="btn btn-ghost" onclick="closeInvModal()">Cancel</button>
-          <button class="btn btn-primary" onclick="saveInv()">Save</button>
+          <button class="btn btn-primary" onclick="saveInv()">Save & Sync</button>
         </div>
       </div>
     </div>`;
@@ -2949,10 +3076,13 @@ function saveInv(){
   state.beerInventory.forEach(b=>{
     const k20=+document.getElementById(`inv-20-${b.beer}`).value||0;
     const k50=+document.getElementById(`inv-50-${b.beer}`).value||0;
-    b.kegs20=k20;b.kegs50=k50;b.litres=k20*20+k50*50;
+    b.kegs20=k20; b.kegs50=k50; b.litres=k20*20+k50*50;
+    const bl=document.getElementById(`inv-batch-${b.beer}`);
+    if(bl) b.batchLabel=bl.value.trim()||null;
   });
-  saveState();closeInvModal();renderContent();toast('Inventory updated');
+  saveState(); closeInvModal(); renderContent(); toast('Inventory updated & synced');
 }
+
 
 // ── Schedule ──────────────────────────────────────────────────────────────────
 function renderSchedule() {
