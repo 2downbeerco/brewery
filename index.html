@@ -3102,22 +3102,40 @@ function renderBeerInv() {
 }
 
 async function restoreBarOrderStock() {
-  const breweryBeers = [
-    {beer:'BB', batch:'52', litres:410, brewDate:'', inactive:false, source:'coldroom'},
-    {beer:'GR', batch:'14', litres:720, brewDate:'', inactive:false, source:'tank'},
-    {beer:'MP', batch:'42', litres:150, brewDate:'', inactive:false, source:'coldroom'},
-    {beer:'DC', batch:'25', litres:160, brewDate:'', inactive:false, source:'coldroom'},
-    {beer:'DC', batch:'26', litres:980, brewDate:'', inactive:false, source:'tank'},
-    {beer:'OW', batch:'4',  litres:190, brewDate:'', inactive:false, source:'coldroom'},
-  ];
+  if (!confirm('This will restore consumed batch history to the bar order Beer Stock tab. Proceed?')) return;
+  // First read current active breweryBeers from Supabase so we don't overwrite them
   try {
+    const existing = await fetch(SB_URL + '/rest/v1/kegs?select=id,data&id=eq.__brewery_beers__', { headers: SB_HDR }).then(r=>r.json());
+    const current = existing[0]?.data?.breweryBeers || [];
+    // Remove any consumed entries already present, keep active ones
+    const activeOnly = current.filter(b=>!b.inactive);
+    // Add all known consumed batches
+    const consumed = [
+      {beer:'BB', batch:'50', litres:0, brewDate:'', inactive:true},
+      {beer:'BB', batch:'51', litres:0, brewDate:'', inactive:true},
+      {beer:'GR', batch:'12', litres:0, brewDate:'', inactive:true},
+      {beer:'GR', batch:'13', litres:0, brewDate:'', inactive:true},
+      {beer:'MP', batch:'39', litres:0, brewDate:'', inactive:true},
+      {beer:'MP', batch:'40', litres:0, brewDate:'', inactive:true},
+      {beer:'MP', batch:'41', litres:0, brewDate:'', inactive:true},
+      {beer:'DC', batch:'23', litres:0, brewDate:'', inactive:true},
+      {beer:'DC', batch:'24', litres:0, brewDate:'', inactive:true},
+      {beer:'OW', batch:'3',  litres:0, brewDate:'', inactive:true},
+    ];
+    // Also mark MP42, DC25, OW4 as consumed since they're exhausted
+    const exhausted = ['MP42','DC25','OW4'];
+    const finalActive = activeOnly.map(b => {
+      if (exhausted.includes(b.beer+(b.batch||''))) return {...b, inactive:true};
+      return b;
+    });
+    const breweryBeers = [...finalActive, ...consumed];
     const res = await fetch(SB_URL + '/rest/v1/kegs', {
       method: 'POST',
       headers: { ...SB_HDR, 'Prefer': 'resolution=merge-duplicates,return=minimal' },
       body: JSON.stringify({ id: '__brewery_beers__', data: { breweryBeers }, updated_at: new Date().toISOString() })
     });
     if (res.ok) {
-      toast('✓ Bar order stock restored successfully');
+      toast('✓ Consumed batch history restored');
     } else {
       const err = await res.text();
       toast('Error: ' + err, false);
