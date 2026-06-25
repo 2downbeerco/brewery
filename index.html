@@ -451,7 +451,17 @@ async function pushBreweryBeersToKegs(breweryBeers) {
       // Inactive batches — skip entirely
     });
 
-    // 3. Push merged array back
+    // 3. Deactivate any active bar order batch that brew ops no longer has
+    //    (e.g. tank moved back from Ready, or cold room batch removed)
+    merged.forEach((b, idx) => {
+      if (b.inactive) return; // already consumed, skip
+      const stillInBrewOps = breweryBeers.some(bb =>
+        bb.beer === b.beer && String(bb.batch) === String(b.batch)
+      );
+      if (!stillInBrewOps) {
+        merged[idx] = { ...b, inactive: true, litres: 0 };
+      }
+    });
     await fetch(SB_URL + '/rest/v1/kegs', {
       method: 'POST',
       headers: { ...SB_HDR, 'Prefer': 'resolution=merge-duplicates,return=minimal' },
