@@ -3028,11 +3028,16 @@ function renderBeerInv() {
   ])].filter(Boolean).sort((a,b)=>beerName(a).localeCompare(beerName(b)));
 
   return `
-        <div class="grid3" style="margin-bottom:20px;">
-      <div class="stat-card"><div class="stat-num">${coldRoomLitres}L</div><div class="stat-lbl">Cold Room</div><div class="stat-sub">${state.beerInventory.reduce((s,inv)=>s+(inv.batches||[]).length,0)} batch${state.beerInventory.reduce((s,inv)=>s+(inv.batches||[]).length,0)!==1?'es':''}</div></div>
-      <div class="stat-card"><div class="stat-num">${tankLitres}L</div><div class="stat-lbl">Ready in Tanks</div><div class="stat-sub">${readyTanks.length} tank${readyTanks.length!==1?'s':''}</div></div>
-      <div class="stat-card"><div class="stat-num">${totalLitres}L</div><div class="stat-lbl">Total Available</div><div class="stat-sub">Cold Room + Tanks</div></div>
-    </div>
+        ${(()=>{
+      const inProcess = state.tanks.filter(t=>t.beer&&t.stage&&t.stage!=='Empty'&&t.stage!=='Ready');
+      const inProcessBeers = [...new Set(inProcess.map(t=>beerName(t.beer)))];
+      return `<div class="grid4" style="margin-bottom:20px;">
+        <div class="stat-card"><div class="stat-num">${coldRoomLitres}L</div><div class="stat-lbl">Cold Room</div><div class="stat-sub">${state.beerInventory.reduce((s,inv)=>s+(inv.batches||[]).length,0)} batch${state.beerInventory.reduce((s,inv)=>s+(inv.batches||[]).length,0)!==1?'es':''}</div></div>
+        <div class="stat-card"><div class="stat-num">${tankLitres}L</div><div class="stat-lbl">Ready in Tanks</div><div class="stat-sub">${readyTanks.length} tank${readyTanks.length!==1?'s':''}</div></div>
+        <div class="stat-card"><div class="stat-num">${totalLitres}L</div><div class="stat-lbl">Total Available</div><div class="stat-sub">Cold Room + Tanks</div></div>
+        <div class="stat-card"><div class="stat-num">${inProcess.length}</div><div class="stat-lbl">In Process</div><div class="stat-sub" style="line-height:1.6;">${inProcessBeers.length?inProcessBeers.map(n=>`<span style="display:inline-block;background:var(--accent-bg);color:var(--accent);border-radius:4px;padding:1px 7px;font-size:11px;margin:1px 2px;">${n}</span>`).join(''):'None'}</div></div>
+      </div>`;
+    })()}
 
     <!-- Per-beer table -->
     <div class="card" style="padding:0;overflow:hidden;margin-bottom:20px;">
