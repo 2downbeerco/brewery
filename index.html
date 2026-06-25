@@ -362,11 +362,16 @@ function computeBreweryBeers() {
     const beerObj = state.beers.find(b => b.code === inv.beer);
     if (!beerObj || beerObj.active === false) return;
     (inv.batches||[]).forEach(b => {
-      const litres = (b.kegs20||0)*20 + (b.kegs50||0)*50;
+      const litres = b.litres || (b.kegs20||0)*20 + (b.kegs50||0)*50;
       if (litres <= 0) return;
+      // Strip beer code prefix from batchNo if present (e.g. "BB52" → "52")
+      let batchNo = b.batchNo || (inv.beer + '-CR');
+      if (batchNo.toUpperCase().startsWith(inv.beer.toUpperCase())) {
+        batchNo = batchNo.slice(inv.beer.length);
+      }
       result.push({
         beer:    inv.beer,
-        batch:   b.batchNo || (inv.beer + '-CR'),
+        batch:   batchNo,
         litres,
         brewDate: b.brewDate || '',
         inactive: false,
@@ -380,9 +385,14 @@ function computeBreweryBeers() {
     if (tank.stage !== 'Ready' || !tank.beer || !tank.vol) return;
     const beerObj = state.beers.find(b => b.code === tank.beer);
     if (!beerObj || beerObj.active === false) return;
+    // Strip beer code prefix from batchNo if present (e.g. "GR14" → "14")
+    let batchNo = tank.batchNo || (tank.beer + '-' + tank.id);
+    if (batchNo.toUpperCase().startsWith(tank.beer.toUpperCase())) {
+      batchNo = batchNo.slice(tank.beer.length);
+    }
     result.push({
       beer:     tank.beer,
-      batch:    tank.batchNo || (tank.beer + '-' + tank.id),
+      batch:    batchNo,
       litres:   tank.vol || 0,
       brewDate: tank.since || '',
       inactive: false,
