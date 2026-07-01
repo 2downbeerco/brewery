@@ -1843,33 +1843,67 @@ function openTankDetail(id) {
   const stageColors = { Fermenting:'#2563EB', Conditioning:'#7C3AED', Carbonating:'#0EA5E9', Ready:'#16A34A', Empty:'#9CA3AF' };
   const sc = stageColors[t.stage]||'#9CA3AF';
 
-  const gravitySection = t.stage==='Fermenting' || gLog.length > 0 ? `
+  // Stage-specific log section
+  const isFermenting   = t.stage === 'Fermenting';
+  const isConditioning = t.stage === 'Conditioning';
+  const isCarbonating  = t.stage === 'Carbonating';
+  const isReady        = t.stage === 'Ready';
+
+  // History table — shows all readings across all stages
+  const historyTable = gLog.length ? `
+    <div class="tbl-wrap" style="margin-bottom:10px;"><table class="tbl" style="font-size:13px;">
+      <thead><tr><th>Date</th><th>Stage</th><th>°Plato</th><th>Temp (°C)</th><th>Notes</th><th></th></tr></thead>
+      <tbody>
+        ${gLog.map((g,i)=>`<tr>
+          <td>${fmtDate(g.date)}</td>
+          <td>${g.stage?`<span style="font-size:11px;font-weight:600;color:${stageColors[g.stage]||'var(--muted)'};">${g.stage}</span>`:'<span style="color:var(--muted);">—</span>'}</td>
+          <td>${g.plato!=null||g.sg!=null?`<strong>${g.plato||g.sg}°P</strong>`:'—'}</td>
+          <td>${g.temp!=null?g.temp+'°C':'—'}</td>
+          <td style="color:var(--muted);">${g.note||''}</td>
+          <td><button class="del-btn" onclick="removeGravityLog('${id}',${i})">✕</button></td>
+        </tr>`).join('')}
+      </tbody>
+    </table></div>` : '<div style="color:var(--muted);font-size:13px;margin-bottom:10px;">No readings yet.</div>';
+
+  // Fermenting — gravity + temp
+  const fermentingInput = isFermenting ? `
+    <div style="background:var(--bg);border-radius:8px;padding:12px;display:grid;grid-template-columns:1fr 80px 80px 1fr auto;gap:8px;align-items:end;">
+      <div><label class="lbl" style="font-size:10px;">Date</label><input class="inp inp-sm" type="date" id="glog-date" value="${new Date().toISOString().slice(0,10)}"></div>
+      <div><label class="lbl" style="font-size:10px;">°Plato</label><input class="inp inp-sm" type="number" step="0.1" id="glog-sg" placeholder="e.g. 12.5"></div>
+      <div><label class="lbl" style="font-size:10px;">Temp (°C)</label><input class="inp inp-sm" type="number" step="0.1" id="glog-temp" placeholder="20"></div>
+      <div><label class="lbl" style="font-size:10px;">Notes</label><input class="inp inp-sm" id="glog-note" placeholder="Observations..."></div>
+      <button class="btn btn-primary btn-sm" onclick="addGravityLog('${id}')">+ Add</button>
+    </div>` : '';
+
+  // Conditioning — temp only (no gravity)
+  const conditioningInput = isConditioning ? `
+    <div style="background:var(--bg);border-radius:8px;padding:12px;display:grid;grid-template-columns:1fr 80px 1fr auto;gap:8px;align-items:end;">
+      <div><label class="lbl" style="font-size:10px;">Date</label><input class="inp inp-sm" type="date" id="glog-date" value="${new Date().toISOString().slice(0,10)}"></div>
+      <div><label class="lbl" style="font-size:10px;">Temp (°C)</label><input class="inp inp-sm" type="number" step="0.1" id="glog-temp" placeholder="2"></div>
+      <div><label class="lbl" style="font-size:10px;">Notes</label><input class="inp inp-sm" id="glog-note" placeholder="Observations..."></div>
+      <button class="btn btn-primary btn-sm" onclick="addTempLog('${id}')">+ Add</button>
+    </div>` : '';
+
+  // Carbonating — FG gravity reading + temp
+  const carbonatingInput = isCarbonating ? `
+    <div style="background:var(--bg);border-radius:8px;padding:12px;display:grid;grid-template-columns:1fr 80px 80px 1fr auto;gap:8px;align-items:end;">
+      <div><label class="lbl" style="font-size:10px;">Date</label><input class="inp inp-sm" type="date" id="glog-date" value="${new Date().toISOString().slice(0,10)}"></div>
+      <div><label class="lbl" style="font-size:10px;">FG (°Plato)</label><input class="inp inp-sm" type="number" step="0.1" id="glog-sg" placeholder="e.g. 3.5"></div>
+      <div><label class="lbl" style="font-size:10px;">Temp (°C)</label><input class="inp inp-sm" type="number" step="0.1" id="glog-temp" placeholder="2"></div>
+      <div><label class="lbl" style="font-size:10px;">Notes</label><input class="inp inp-sm" id="glog-note" placeholder="FG reading..."></div>
+      <button class="btn btn-primary btn-sm" onclick="addGravityLog('${id}')">+ Add</button>
+    </div>` : '';
+
+  const gravitySection = `
     <div style="margin-top:16px;">
       <div style="font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:10px;">
-        Daily Gravity Log
+        ${isFermenting?'Gravity & Temp Log':isConditioning?'Conditioning Temp Log':isCarbonating?'Final Gravity (FG)':'Process Log'}
       </div>
-      ${gLog.length ? `
-        <div class="tbl-wrap" style="margin-bottom:10px;"><table class="tbl" style="font-size:13px;">
-          <thead><tr><th>Date</th><th>Stage</th><th>°Plato</th><th>Temp (°C)</th><th>Notes</th><th></th></tr></thead>
-          <tbody>
-            ${gLog.map((g,i)=>`<tr>
-              <td>${fmtDate(g.date)}</td>
-              <td>${g.stage?`<span style="font-size:11px;font-weight:600;color:${stageColors[g.stage]||'var(--muted)'};">${g.stage}</span>`:'<span style="color:var(--muted);">—</span>'}</td>
-              <td><strong>${g.plato||g.sg}°P</strong></td>
-              <td>${g.temp!=null?g.temp:'—'}</td>
-              <td style="color:var(--muted);">${g.note||''}</td>
-              <td><button class="del-btn" onclick="removeGravityLog('${id}',${i})">✕</button></td>
-            </tr>`).join('')}
-          </tbody>
-        </table></div>` : '<div style="color:var(--muted);font-size:13px;margin-bottom:10px;">No gravity readings yet.</div>'}
-      <div style="background:var(--bg);border-radius:8px;padding:12px;display:grid;grid-template-columns:1fr 80px 80px 1fr auto;gap:8px;align-items:end;">
-        <div><label class="lbl" style="font-size:10px;">Date</label><input class="inp inp-sm" type="date" id="glog-date" value="${new Date().toISOString().slice(0,10)}"></div>
-        <div><label class="lbl" style="font-size:10px;">°Plato</label><input class="inp inp-sm" type="number" step="0.1" id="glog-sg" placeholder="e.g. 12.5"></div>
-        <div><label class="lbl" style="font-size:10px;">Temp (°C)</label><input class="inp inp-sm" type="number" step="0.1" id="glog-temp" placeholder="20"></div>
-        <div><label class="lbl" style="font-size:10px;">Notes</label><input class="inp inp-sm" id="glog-note" placeholder="Observations..."></div>
-        <button class="btn btn-primary btn-sm" onclick="addGravityLog('${id}')">Add</button>
-      </div>
-    </div>` : '';
+      ${historyTable}
+      ${fermentingInput}
+      ${conditioningInput}
+      ${carbonatingInput}
+    </div>`;
 
   const carbonationSection = (t.stage==='Carbonating'||t.stage==='Ready'||t.carbonationVol) ? `
     <div style="margin-top:16px;">
@@ -1912,7 +1946,7 @@ function openTankDetail(id) {
 
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:4px;">
       <div><label class="lbl" style="font-size:10px;">Stage</label>
-        <select class="inp inp-sm" onchange="updateTankField('${id}','stage',this.value);closeTankDetail();renderContent()">
+        <select class="inp inp-sm" onchange="changeTankStage('${id}',this.value)">
           ${['Empty','Fermenting','Conditioning','Carbonating','Ready'].map(s=>`<option ${t.stage===s?'selected':''}>${s}</option>`).join('')}
         </select>
       </div>
@@ -1930,11 +1964,43 @@ function openTankDetail(id) {
 
 function closeTankDetail() { document.getElementById('tank-detail-modal').style.display='none'; }
 
+function changeTankStage(id, newStage) {
+  const i = state.tanks.findIndex(x=>x.id===id);
+  if (i<0) return;
+  const tank = state.tanks[i];
+  // If clearing tank, go through archive prompt
+  if (newStage === 'Empty' && tank.beer && tank.stage !== 'Empty') {
+    const obj = { ...tank, stage: 'Empty', beer: null, batchNo: null, vol: 0, batchVol: null, since: null, temp: null };
+    closeTankDetail();
+    showArchivePrompt(id, tank, obj);
+    return;
+  }
+  state.tanks[i].stage = newStage;
+  saveState();
+  openTankDetail(id); // re-render modal in place
+}
+
 function updateTankField(id, field, val) {
   const i = state.tanks.findIndex(x=>x.id===id);
   if (i<0) return;
   state.tanks[i][field] = val;
   saveState();
+}
+
+function addTempLog(tankId) {
+  const date = document.getElementById('glog-date').value;
+  const temp = document.getElementById('glog-temp').value !== '' ? +document.getElementById('glog-temp').value : null;
+  const note = document.getElementById('glog-note').value.trim();
+  if (!date) { toast('Date required', false); return; }
+  if (!state.gravityLogs[tankId]) state.gravityLogs[tankId] = [];
+  const tank = state.tanks.find(x=>x.id===tankId);
+  state.gravityLogs[tankId].push({ date, plato: null, temp, note, stage: tank?.stage||null });
+  state.gravityLogs[tankId].sort((a,b)=>a.date.localeCompare(b.date));
+  // Update tank current temp
+  const i = state.tanks.findIndex(x=>x.id===tankId);
+  if (i>=0 && temp!=null) state.tanks[i].temp = temp;
+  saveState();
+  openTankDetail(tankId);
 }
 
 function addGravityLog(tankId) {
