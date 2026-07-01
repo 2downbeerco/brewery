@@ -1850,10 +1850,11 @@ function openTankDetail(id) {
       </div>
       ${gLog.length ? `
         <div class="tbl-wrap" style="margin-bottom:10px;"><table class="tbl" style="font-size:13px;">
-          <thead><tr><th>Date</th><th>°Plato</th><th>Temp (°C)</th><th>Notes</th><th></th></tr></thead>
+          <thead><tr><th>Date</th><th>Stage</th><th>°Plato</th><th>Temp (°C)</th><th>Notes</th><th></th></tr></thead>
           <tbody>
             ${gLog.map((g,i)=>`<tr>
               <td>${fmtDate(g.date)}</td>
+              <td>${g.stage?`<span style="font-size:11px;font-weight:600;color:${stageColors[g.stage]||'var(--muted)'};">${g.stage}</span>`:'<span style="color:var(--muted);">—</span>'}</td>
               <td><strong>${g.plato||g.sg}°P</strong></td>
               <td>${g.temp!=null?g.temp:'—'}</td>
               <td style="color:var(--muted);">${g.note||''}</td>
@@ -1943,7 +1944,8 @@ function addGravityLog(tankId) {
   const note = document.getElementById('glog-note').value.trim();
   if (!date || !plato) { toast('Date and °Plato required', false); return; }
   if (!state.gravityLogs[tankId]) state.gravityLogs[tankId] = [];
-  state.gravityLogs[tankId].push({ date, plato, temp, note });
+  const tank = state.tanks.find(x=>x.id===tankId);
+  state.gravityLogs[tankId].push({ date, plato, temp, note, stage: tank?.stage||null });
   state.gravityLogs[tankId].sort((a,b)=>a.date.localeCompare(b.date));
   // Update tank's current gravity
   const i = state.tanks.findIndex(x=>x.id===tankId);
@@ -2003,9 +2005,105 @@ function saveTank(){
     temp:document.getElementById('tm-temp').value!==''?+document.getElementById('tm-temp').value:null,
   };
   if(!obj.name){toast('Tank name required',false);return;}
-  if(id){const i=state.tanks.findIndex(x=>x.id===id);state.tanks[i]={...state.tanks[i],...obj};}
-  else{obj.id='T'+state.nextTankId++;state.tanks.push(obj);}
+
+  // Check if tank is being cleared (set to Empty) and had a batch
+  if(id){
+    const existing=state.tanks.find(x=>x.id===id);
+    const beingCleared = obj.stage==='Empty' && existing && existing.beer && existing.stage!=='Empty';
+    if(beingCleared){
+      // Show archive prompt before saving
+      closeTankModal();
+      showArchivePrompt(id, existing, obj);
+      return;
+    }
+    const i=state.tanks.findIndex(x=>x.id===id);
+    state.tanks[i]={...state.tanks[i],...obj};
+  } else {
+    obj.id='T'+state.nextTankId++;
+    state.tanks.push(obj);
+  }
   saveState();closeTankModal();renderContent();toast('Tank saved');
+}
+
+function showArchivePrompt(tankId, tank, newObj) {
+  const gLog = state.gravityLogs[tankId] || [];
+  const beerLabel = (state.beers.find(b=>b.code===tank.beer)?.name||tank.beer) + (tank.batchNo?' Batch '+tank.batchNo:'');
+  const div = document.createElement('div');
+  div.id = 'archive-overlay';
+  div.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:1000;display:flex;align-items:center;justify-content:center;';
+  div.innerHTML = `
+    <div style="background:var(--card);border-radius:16px;padding:28px;max-width:460px;width:90%;box-shadow:0 8px 40px rgba(0,0,0,0.3);">
+      <div style="font-size:18px;font-weight:700;margin-bottom:8px;">Archive Batch Data?</div>
+      <div style="font-size:14px;color:var(--muted);margin-bottom:20px;">
+        <strong>${beerLabel}</strong> in ${tank.name} has ${gLog.length} gravity reading${gLog.length!==1?'s':''} and brew data that will be lost when this tank is cleared.
+      </div>
+      <div style="font-size:13px;color:var(--muted);margin-bottom:20px;background:var(--bg);border-radius:8px;padding:12px;">
+        This will save a <strong>Completed</strong> brew log entry with:<br>
+        • Beer, batch no., brew date, volume<br>
+        • All gravity readings (${gLog.length})<br>
+        • Tank temperature &amp; carbonation data
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" onclick="clearTankNoArchive('${tankId}')">Clear Without Archiving</button>
+        <button class="btn btn-primary" onclick="archiveAndClearTank('${tankId}')">Archive &amp; Clear Tank</button>
+      </div>
+    </div>`;
+  document.body.appendChild(div);
+  // Store pending newObj for after decision
+  window._pendingTankClear = { tankId, newObj };
+}
+
+function clearTankNoArchive(tankId) {
+  document.getElementById('archive-overlay')?.remove();
+  const { newObj } = window._pendingTankClear || {};
+  if(!newObj) return;
+  const i = state.tanks.findIndex(x=>x.id===tankId);
+  if(i>=0) state.tanks[i]={...state.tanks[i],...newObj};
+  saveState(); renderContent(); toast('Tank cleared');
+  window._pendingTankClear = null;
+}
+
+function archiveAndClearTank(tankId) {
+  document.getElementById('archive-overlay')?.remove();
+  const { newObj } = window._pendingTankClear || {};
+  if(!newObj) return;
+  const tank = state.tanks.find(x=>x.id===tankId);
+  if(!tank) return;
+  const gLog = state.gravityLogs[tankId] || [];
+
+  // Create completed brew log entry
+  const archiveEntry = {
+    id: state.nextBrewId++,
+    status: 'Completed',
+    date: tank.since || new Date().toISOString().slice(0,10),
+    beer: tank.beer,
+    batchNo: tank.batchNo || '',
+    brewer: '',
+    targetVol: tank.batchVol || tank.vol || 0,
+    yieldEst: tank.vol || 0,
+    tank: tankId,
+    tankName: tank.name,
+    archivedFrom: 'tank',
+    archiveDate: new Date().toISOString().slice(0,10),
+    gravityLog: gLog,
+    temp: tank.temp,
+    carbonationVol: tank.carbonationVol || null,
+    carbonationDate: tank.carbonationDate || null,
+    readyDate: tank.readyDate || null,
+    notes: `Archived from ${tank.name} on ${new Date().toLocaleDateString('en-IN')}`,
+  };
+
+  state.brewLogs.push(archiveEntry);
+  // Clear gravity log for this tank
+  state.gravityLogs[tankId] = [];
+
+  // Now clear the tank
+  const i = state.tanks.findIndex(x=>x.id===tankId);
+  if(i>=0) state.tanks[i]={...state.tanks[i],...newObj};
+
+  saveState(); renderContent();
+  toast('Batch archived to Brew Log & tank cleared');
+  window._pendingTankClear = null;
 }
 function deleteTank(){
   const id=document.getElementById('tm-id').value;
