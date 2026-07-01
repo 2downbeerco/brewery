@@ -1776,7 +1776,10 @@ function renderTanks() {
             </div>
             ${t.since?`<div class="tank-days">Day ${ds} · since ${fmtDate(t.since)}</div>`:''}
             ${t.temp!=null?`<div class="tank-days">🌡️ ${t.temp}°C</div>`:''}
-            ${latestG?`<div class="tank-days" style="color:var(--blue);">${latestG.plato||latestG.sg}°P <span style="font-size:10px;">(${fmtDate(latestG.date)})</span></div>`:''}
+            ${(()=>{
+              const lastG = gLog.slice().reverse().find(g=>g.plato!=null||g.sg!=null);
+              return lastG && t.stage!=='Conditioning' ? `<div class="tank-days" style="color:var(--blue);">${lastG.plato||lastG.sg}°P <span style="font-size:10px;">(${fmtDate(lastG.date)})</span></div>` : '';
+            })()}
             ${t.stage==='Fermenting'&&gLog.length>1?`<div style="font-size:10px;color:var(--muted);margin-top:2px;">${gLog.length} gravity readings</div>`:''}
           ` : `
             <div class="tank-empty-label" style="margin-top:8px;">Empty</div>
