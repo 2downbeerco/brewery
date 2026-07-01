@@ -3381,39 +3381,38 @@ function openConsumedBatches() {
     .then(rows => {
       const all = rows[0]?.data?.breweryBeers || [];
       const consumed = all.filter(b=>b.inactive);
-
       if (!consumed.length) {
         document.getElementById('consumed-content').innerHTML = '<div style="color:var(--muted);font-size:13px;">No consumed batches found.</div>';
         return;
       }
-
-      const byBeer = {};
-      consumed.forEach(b => {
-        if (!byBeer[b.beer]) byBeer[b.beer] = [];
-        byBeer[b.beer].push(b);
-      });
-
-      document.getElementById('consumed-content').innerHTML = Object.entries(byBeer).map(([code, batches])=>`
-        <div style="margin-bottom:20px;">
-          <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
-            <div class="beer-dot" style="background:${beerColor(code)}"></div>
-            <strong style="font-size:14px;">${beerName(code)}</strong>
-            <span style="font-size:12px;color:var(--muted);">${batches.length} batch${batches.length!==1?'es':''}</span>
-          </div>
-          <div class="tbl-wrap"><table class="tbl" style="font-size:13px;">
-            <thead><tr><th>Batch No.</th><th>Source</th><th>Brew Date</th></tr></thead>
-            <tbody>${batches.map(b=>`<tr>
-              <td><span style="font-family:monospace;font-weight:600;color:var(--accent);">${b.batch}</span></td>
-              <td style="color:var(--muted);font-size:12px;">${b.source==='tank'?'🛢️ Tank':'🧊 Cold Room'}</td>
-              <td style="color:var(--muted);">${b.brewDate?fmtDate(b.brewDate):'—'}</td>
-            </tr>`).join('')}
-            </tbody>
-          </table></div>
-        </div>`).join('');
+      renderConsumedContent(consumed, 'All');
     })
     .catch(()=>{
       document.getElementById('consumed-content').innerHTML = '<div style="color:var(--red);font-size:13px;">Failed to load. Check connection.</div>';
     });
+}
+
+function renderConsumedContent(consumed, filter) {
+  const codes = ['All', ...new Set(consumed.map(b=>b.beer))];
+  const filtered = filter==='All' ? consumed : consumed.filter(b=>b.beer===filter);
+  document.getElementById('consumed-content').innerHTML = `
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px;">
+      ${codes.map(c=>`<button class="btn btn-sm ${filter===c?'btn-primary':'btn-ghost'}"
+        onclick="renderConsumedContent(window._consumedAll,'${c}')">${c==='All'?'All':beerName(c)||c}</button>`).join('')}
+    </div>
+    <div class="tbl-wrap"><table class="tbl" style="font-size:13px;">
+      <thead><tr><th>Beer</th><th>Batch</th><th>Batch Size</th></tr></thead>
+      <tbody>${filtered.map(b=>`<tr>
+        <td><div style="display:flex;align-items:center;gap:8px;">
+          <div class="beer-dot" style="background:${beerColor(b.beer)}"></div>
+          <span>${beerName(b.beer)||b.beer}</span>
+        </div></td>
+        <td><span style="font-family:monospace;font-weight:600;color:var(--accent);">${b.batch}</span></td>
+        <td style="color:var(--muted);">${b.batchVol?b.batchVol+'L':b.litresTotal?b.litresTotal+'L':'—'}</td>
+      </tr>`).join('')}
+      </tbody>
+    </table></div>`;
+  window._consumedAll = consumed;
 }
 
 function openAddBeerInvBatch() {
