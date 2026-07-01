@@ -363,7 +363,7 @@ function computeBreweryBeers() {
     if (!beerObj || beerObj.active === false) return;
     (inv.batches||[]).forEach(b => {
       const litres = b.litres || (b.kegs20||0)*20 + (b.kegs50||0)*50;
-      if (litres <= 0) return;
+      if (litres <= 0) return; // skip exhausted batches
       // Strip beer code prefix from batchNo if present (e.g. "BB52" → "52")
       let batchNo = b.batchNo || (inv.beer + '-CR');
       if (batchNo.toUpperCase().startsWith(inv.beer.toUpperCase())) {
@@ -3220,7 +3220,7 @@ function renderBeerInv() {
         <tbody>
           <!-- Cold room rows -->
           ${state.beerInventory.map((inv,ii)=>{
-            const batches = inv.batches||[];
+            const batches = (inv.batches||[]).filter(b=>(b.litres||0)>0);
             const beerTotal = beerInvTotalLitres(inv);
             return batches.map((b,bi)=>`<tr>
               <td>${bi===0?`<div style="display:flex;align-items:center;gap:8px;"><div class="beer-dot" style="background:${beerColor(inv.beer)}"></div><strong>${beerName(inv.beer)}</strong></div>`:'<span style="color:var(--muted);padding-left:24px;">↳</span>'}</td>
