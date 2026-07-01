@@ -3214,7 +3214,10 @@ function renderBeerInv() {
     <div class="card" style="padding:0;overflow:hidden;margin-bottom:20px;">
       <div style="padding:14px 18px;background:var(--bg);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;">
         <span style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:1px;">Inventory</span>
-        <button class="btn btn-primary btn-sm" onclick="openAddBeerInvBatch()">+ Add Batch</button>
+        <div style="display:flex;gap:8px;">
+          <button class="btn btn-ghost btn-sm" onclick="openConsumedBatches()">📦 Consumed Batches</button>
+          <button class="btn btn-primary btn-sm" onclick="openAddBeerInvBatch()">+ Add Batch</button>
+        </div>
       </div>
       <div class="tbl-wrap"><table class="tbl" style="table-layout:fixed;width:100%;">
         <colgroup><col style="width:30%"><col style="width:15%"><col style="width:15%"><col style="width:15%"><col style="width:15%"><col style="width:10%"></colgroup>
@@ -3356,6 +3359,66 @@ async function restoreBarOrderStock() {
   } catch(e) {
     toast('Failed: ' + e.message, false);
   }
+}
+
+function openConsumedBatches() {
+  // Pull breweryBeers from Supabase kegs table
+  const modal = document.createElement('div');
+  modal.id = 'consumed-modal';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:1000;display:flex;align-items:center;justify-content:center;';
+  modal.innerHTML = `<div style="background:var(--card);border-radius:16px;padding:28px;max-width:600px;width:92%;max-height:85vh;display:flex;flex-direction:column;box-shadow:0 8px 40px rgba(0,0,0,0.3);">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+      <div style="font-size:18px;font-weight:700;">Consumed Batches</div>
+      <button class="btn btn-ghost btn-sm" onclick="document.getElementById('consumed-modal').remove()">✕</button>
+    </div>
+    <div id="consumed-content" style="overflow-y:auto;flex:1;">
+      <div style="color:var(--muted);font-size:13px;">Loading...</div>
+    </div>
+  </div>`;
+  document.body.appendChild(modal);
+
+  // Fetch from Supabase
+  fetch(SB_URL + '/rest/v1/kegs?select=id,data&id=eq.__brewery_beers__', { headers: SB_HDR })
+    .then(r=>r.json())
+    .then(rows => {
+      const all = rows[0]?.data?.breweryBeers || [];
+      const consumed = all.filter(b=>b.inactive);
+
+      if (!consumed.length) {
+        document.getElementById('consumed-content').innerHTML = '<div style="color:var(--muted);font-size:13px;">No consumed batches found.</div>';
+        return;
+      }
+
+      // Group by beer
+      const byBeer = {};
+      consumed.forEach(b => {
+        if (!byBeer[b.beer]) byBeer[b.beer] = [];
+        byBeer[b.beer].push(b);
+      });
+
+      const html = Object.entries(byBeer).map(([code, batches])=>`
+        <div style="margin-bottom:20px;">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+            <div class="beer-dot" style="background:${beerColor(code)}"></div>
+            <strong style="font-size:14px;">${beerName(code)}</strong>
+            <span style="font-size:12px;color:var(--muted);">${batches.length} batch${batches.length!==1?'es':''}</span>
+          </div>
+          <div class="tbl-wrap"><table class="tbl" style="font-size:13px;">
+            <thead><tr><th>Batch No.</th><th>Total Brewed</th><th>Source</th></tr></thead>
+            <tbody>${batches.map(b=>`<tr>
+              <td><span style="font-family:monospace;font-weight:600;color:var(--accent);">${b.batch}</span></td>
+              <td style="color:var(--muted);">${b.litres!=null?b.litres+'L':'—'}</td>
+              <td style="color:var(--muted);font-size:12px;">${b.source==='tank'?'🛢️ Tank':'🧊 Cold Room'}</td>
+            </tr>`).join('')}
+            </tbody>
+          </table></div>
+        </div>`).join('');
+
+      document.getElementById('consumed-content').innerHTML = html;
+    })
+    .catch(()=>{
+      document.getElementById('consumed-content').innerHTML = '<div style="color:var(--red);font-size:13px;">Failed to load. Check connection.</div>';
+    });
 }
 
 function openAddBeerInvBatch() {
