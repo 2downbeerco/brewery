@@ -3366,12 +3366,12 @@ function openConsumedBatches() {
   const modal = document.createElement('div');
   modal.id = 'consumed-modal';
   modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:9999;display:flex;align-items:center;justify-content:center;';
-  modal.innerHTML = `<div style="background:var(--card);border-radius:16px;padding:28px;max-width:600px;width:92%;max-height:85vh;display:flex;flex-direction:column;box-shadow:0 8px 40px rgba(0,0,0,0.3);">
+  modal.innerHTML = `<div style="background:#1a1f2e;border-radius:16px;padding:28px;max-width:600px;width:92%;max-height:85vh;display:flex;flex-direction:column;box-shadow:0 8px 40px rgba(0,0,0,0.6);position:relative;z-index:10000;">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
-      <div style="font-size:18px;font-weight:700;">Consumed Batches</div>
-      <button class="btn btn-ghost btn-sm" onclick="document.getElementById('consumed-modal').remove()">✕</button>
+      <div style="font-size:18px;font-weight:700;color:var(--text);">Consumed Batches</div>
+      <button class="btn btn-ghost btn-sm" onclick="document.getElementById('consumed-modal').remove()" style="color:var(--text);">✕</button>
     </div>
-    <div id="consumed-content" style="overflow-y:auto;flex:1;">
+    <div id="consumed-content" style="overflow-y:auto;flex:1;color:var(--text);">
       <div style="color:var(--muted);font-size:13px;">Loading...</div>
     </div>
   </div>`;
@@ -3404,11 +3404,11 @@ function openConsumedBatches() {
             <span style="font-size:12px;color:var(--muted);">${batches.length} batch${batches.length!==1?'es':''}</span>
           </div>
           <div class="tbl-wrap"><table class="tbl" style="font-size:13px;">
-            <thead><tr><th>Batch No.</th><th>Total Brewed</th><th>Source</th></tr></thead>
+            <thead><tr><th>Batch No.</th><th>Source</th><th>Brew Date</th></tr></thead>
             <tbody>${batches.map(b=>`<tr>
               <td><span style="font-family:monospace;font-weight:600;color:var(--accent);">${b.batch}</span></td>
-              <td style="color:var(--muted);">${b.litres!=null?b.litres+'L':'—'}</td>
               <td style="color:var(--muted);font-size:12px;">${b.source==='tank'?'🛢️ Tank':'🧊 Cold Room'}</td>
+              <td style="color:var(--muted);">${b.brewDate?fmtDate(b.brewDate):'—'}</td>
             </tr>`).join('')}
             </tbody>
           </table></div>
