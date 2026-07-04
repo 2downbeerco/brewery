@@ -440,8 +440,8 @@ async function pushBreweryBeersToKegs(breweryBeers) {
         merged.push({ ...brewBatch, inactive: false });
       } else if (!merged[idx].inactive) {
         // Active batch — always sync litres from brew dashboard (source of truth for brewed quantity)
-        // Beer Stock computes remaining dynamically (brewed − dispatched), so setting litres here
-        // does not conflict with bar order deductions — it just updates the brewed base.
+        // Beer Stock in bar order app computes remaining dynamically (brewed − dispatched), so
+        // setting litres here does not conflict with bar order deductions.
         merged[idx].litres   = brewBatch.litres;
         merged[idx].source   = brewBatch.source;
         merged[idx].tankId   = brewBatch.tankId   || null;
