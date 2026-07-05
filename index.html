@@ -681,6 +681,13 @@ function renderDashboard() {
 // Views: list → detail (edit/view)
 
 function renderBrewLog() {
+  // Fix any brew logs with missing ids
+  state.brewLogs.forEach(b => {
+    if (b.id == null) {
+      b.id = state.nextBrewId++;
+      saveState();
+    }
+  });
   if (window._openBrewId != null) return renderBrewDetail(window._openBrewId);
   return renderBrewList();
 }
