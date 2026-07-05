@@ -1565,6 +1565,23 @@ function updateIngUnit(section, idx, selectEl) {
   }
 }
 
+function updateLog(id, field, val) {
+  const i = state.brewLogs.findIndex(b=>b.id===id);
+  if (i<0) return;
+  state.brewLogs[i][field] = val;
+  saveState();
+  // Only re-render if not a simple field change (avoid wiping form)
+  if (['beer','status'].includes(field)) renderContent();
+}
+
+function updateBrewField(field, val) {
+  const id = window._openBrewId;
+  const i = state.brewLogs.findIndex(b=>b.id===id);
+  if (i<0) return;
+  state.brewLogs[i][field] = val;
+  saveState();
+}
+
 function startBrew(id) {
   const i = state.brewLogs.findIndex(b=>b.id===id);
   state.brewLogs[i].status = 'In Progress';
