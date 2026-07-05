@@ -2930,7 +2930,9 @@ function savePO(){
     state.purchaseOrders.push(po);
   }
 
-  // Always update stock on save (this is a receive entry)
+  // Update stock: new POs add full qty, edits apply the delta (new qty - old qty)
+  const oldPO = !isNew ? state.purchaseOrders.find(x=>x.id===id) : null;
+
   validItems.forEach(item=>{
     const name=item.name.trim();
     if(!name||!item.qty)return;
@@ -2947,31 +2949,34 @@ function savePO(){
     if(!r.batches) r.batches=[];
     const isMalt=r.category==='Malt', isHops=r.category==='Hops';
     const batchNo=item.batchNo||('PO-'+po.id);
-    // Check if batch already exists (editing PO)
-    const existingBi=r.batches.findIndex(b=>b.batchNo===batchNo);
-    const newBatch={
-      batchNo,
-      deliveryDate:po.deliveryDate||null,
-      cost:item.unitCost||0,
-      ...(isMalt?{
-        warehouseQty:item.qty||0,
-        breweryQty:0,
-        extractLdk:item.extractLdk!=null?item.extractLdk:null,
-      }:isHops?{
-        qty:item.qty||0,
-        alphaAcid:item.alphaAcid!=null?item.alphaAcid:null,
-      }:{
-        qty:item.qty||0,
-      })
-    };
-    if(existingBi>=0){
-      // Update existing batch
-      if(isMalt) r.batches[existingBi].warehouseQty=(r.batches[existingBi].warehouseQty||0)+item.qty;
-      else r.batches[existingBi].qty=(r.batches[existingBi].qty||0)+item.qty;
-    } else {
-      r.batches.push(newBatch);
+
+    // Calculate qty delta — full qty for new PO, difference for edits
+    const oldItem = oldPO ? oldPO.items.find(oi=>oi.name.trim().toLowerCase()===name.toLowerCase()) : null;
+    const qtyDelta = isNew ? item.qty : item.qty - (oldItem?.qty||0);
+    if(qtyDelta === 0 && !isNew) {
+      // No qty change — still update cost/metadata
+      const bi=r.batches.findIndex(b=>b.batchNo===batchNo);
+      if(bi>=0) { r.batches[bi].cost=item.unitCost||0; if(isMalt&&item.extractLdk!=null) r.batches[bi].extractLdk=item.extractLdk; if(isHops&&item.alphaAcid!=null) r.batches[bi].alphaAcid=item.alphaAcid; }
+      return;
     }
-    // Recalculate total stock
+
+    const existingBi=r.batches.findIndex(b=>b.batchNo===batchNo);
+    if(existingBi>=0){
+      // Update existing batch qty by delta
+      if(isMalt) r.batches[existingBi].warehouseQty=Math.max(0,(r.batches[existingBi].warehouseQty||0)+qtyDelta);
+      else r.batches[existingBi].qty=Math.max(0,(r.batches[existingBi].qty||0)+qtyDelta);
+      r.batches[existingBi].cost=item.unitCost||r.batches[existingBi].cost;
+      if(isMalt&&item.extractLdk!=null) r.batches[existingBi].extractLdk=item.extractLdk;
+      if(isHops&&item.alphaAcid!=null) r.batches[existingBi].alphaAcid=item.alphaAcid;
+    } else if(qtyDelta>0){
+      // New batch
+      r.batches.push({
+        batchNo, deliveryDate:po.deliveryDate||null, cost:item.unitCost||0,
+        ...(isMalt?{warehouseQty:item.qty||0,breweryQty:0,extractLdk:item.extractLdk!=null?item.extractLdk:null}
+          :isHops?{qty:item.qty||0,alphaAcid:item.alphaAcid!=null?item.alphaAcid:null}
+          :{qty:item.qty||0})
+      });
+    }
     rmStatus(r);
   });
 
