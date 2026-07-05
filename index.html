@@ -2938,24 +2938,41 @@ function savePO(){
     if(i<0){
       const newRM={
         id:state.nextRMId++, name, category:item.category||'Other',
-        unit:item.unit||'kg', stock:0, reorder:0, lastCost:item.unitCost||0,
-        ...(item.category==='Malt'?{warehouseStock:0,breweryStock:0}:{})
+        unit:item.unit||'kg', stock:0, reorder:0, lastCost:0, batches:[]
       };
       state.rawMaterials.push(newRM);
       i=state.rawMaterials.length-1;
     }
     const r=state.rawMaterials[i];
-    r.lastCost=item.unitCost||0;
-    if(item.batchNo) r.lastBatchNo=item.batchNo;
-    if(item.extractLdk) r.extractLdk=item.extractLdk;
-    if(item.alphaAcid) r.alphaAcid=item.alphaAcid;
-    r.lastDeliveryDate=po.deliveryDate||null;
-    if(r.category==='Malt'){
-      r.warehouseStock=(r.warehouseStock||0)+item.qty;
-      r.stock=(r.warehouseStock)+(r.breweryStock||0);
+    if(!r.batches) r.batches=[];
+    const isMalt=r.category==='Malt', isHops=r.category==='Hops';
+    const batchNo=item.batchNo||('PO-'+po.id);
+    // Check if batch already exists (editing PO)
+    const existingBi=r.batches.findIndex(b=>b.batchNo===batchNo);
+    const newBatch={
+      batchNo,
+      deliveryDate:po.deliveryDate||null,
+      cost:item.unitCost||0,
+      ...(isMalt?{
+        warehouseQty:item.qty||0,
+        breweryQty:0,
+        extractLdk:item.extractLdk!=null?item.extractLdk:null,
+      }:isHops?{
+        qty:item.qty||0,
+        alphaAcid:item.alphaAcid!=null?item.alphaAcid:null,
+      }:{
+        qty:item.qty||0,
+      })
+    };
+    if(existingBi>=0){
+      // Update existing batch
+      if(isMalt) r.batches[existingBi].warehouseQty=(r.batches[existingBi].warehouseQty||0)+item.qty;
+      else r.batches[existingBi].qty=(r.batches[existingBi].qty||0)+item.qty;
     } else {
-      r.stock=Math.round(((r.stock||0)+item.qty)*1000)/1000;
+      r.batches.push(newBatch);
     }
+    // Recalculate total stock
+    rmStatus(r);
   });
 
   saveState();closePOModal();renderContent();
