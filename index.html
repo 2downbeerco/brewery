@@ -565,7 +565,7 @@ function switchTab(id) {
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-function beer(code) { return BEERS.find(b=>b.code===code); }
+function beer(code) { return state.beers.find(b=>b.code===code) || BEERS.find(b=>b.code===code); }
 function beerName(code) { const b=beer(code); return b?b.name:code||'—'; }
 function beerColor(code) { const b=beer(code); return b?b.color:'#ccc'; }
 function toast(msg, ok=true) {
@@ -1277,9 +1277,10 @@ function renderBrewDetail(id) {
               onchange="updateLog(${id},'fgTarget',this.value)" style="width:50%;">
           </div>
         </div>
-        <div class="form-group"><label class="lbl">Target ABV</label>
-          <input class="inp" value="${beer(log.beer)?.abv!=null?beer(log.beer).abv+'%':'—'}" disabled
-            style="color:var(--muted);background:var(--bg);">
+        <div class="form-group"><label class="lbl">Target ABV (%)</label>
+          <input class="inp" id="bl-abv" type="number" step="0.1" placeholder="e.g. 5.2"
+            value="${log.targetABV!=null?log.targetABV:''}"
+            onchange="updateBrewField('targetABV',+this.value)">
         </div>
       </div>
     </div>
