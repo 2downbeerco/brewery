@@ -681,20 +681,12 @@ function renderDashboard() {
 // Views: list → detail (edit/view)
 
 function renderBrewLog() {
-  // Fix any brew logs with missing ids
-  state.brewLogs.forEach(b => {
-    if (b.id == null) {
-      b.id = state.nextBrewId++;
-      saveState();
-    }
-  });
   if (window._openBrewId != null) return renderBrewDetail(window._openBrewId);
   return renderBrewList();
 }
 
 function renderBrewList() {
   const logs = [...state.brewLogs].sort((a,b)=>b.date.localeCompare(a.date));
-  console.log('brewLogs:', state.brewLogs.map(b=>({id:b.id, beer:b.beer, status:b.status})));
   const statusClass = { Draft:'badge-gray', 'In Progress':'badge-orange', Completed:'badge-green' };
 
   return `
@@ -754,9 +746,6 @@ function newBrewLog() {
 }
 
 function openBrewLog(id) {
-  console.log('openBrewLog called with:', id, typeof id);
-  const found = state.brewLogs.find(b=>b.id===id);
-  console.log('found log:', found);
   window._openBrewId = id;
   renderContent();
 }
@@ -2571,6 +2560,31 @@ function renderPOList() {
 }
 
 // ── RM helpers ────────────────────────────────────────────────────────────────
+function fixBrewLogIds() {
+  const seen = new Set();
+  let maxId = 0;
+  state.brewLogs.forEach(b => { if (b.id != null) maxId = Math.max(maxId, +b.id); });
+  let nextId = maxId + 1;
+  state.brewLogs.forEach(b => {
+    const key = String(b.id);
+    if (seen.has(key) || b.id == null) {
+      b.id = nextId++;
+    } else {
+      seen.add(key);
+    }
+    // Ensure ingredient arrays exist
+    b.grains  = b.grains  || [];
+    b.hops    = b.hops    || [];
+    b.yeast   = b.yeast   || [];
+    b.other   = b.other   || [];
+    b.boilAdd = b.boilAdd || [];
+    b.mash    = b.mash    || {};
+    b.checks  = b.checks  || {};
+    b.execution = b.execution || {};
+  });
+  state.nextBrewId = nextId;
+}
+
 function fixPOIds() {
   const seen = new Set();
   let maxId = 0;
@@ -4020,6 +4034,7 @@ function saveBeer() {
     setTimeout(() => setSyncStatus('', ''), 2000);
     fixRMIds();
     fixPOIds();
+    fixBrewLogIds();
     saveState();
     try { renderNav(); renderContent(); } catch(e) {}
     startAutoSync();
