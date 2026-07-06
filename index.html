@@ -694,6 +694,7 @@ function renderBrewLog() {
 
 function renderBrewList() {
   const logs = [...state.brewLogs].sort((a,b)=>b.date.localeCompare(a.date));
+  console.log('brewLogs:', state.brewLogs.map(b=>({id:b.id, beer:b.beer, status:b.status})));
   const statusClass = { Draft:'badge-gray', 'In Progress':'badge-orange', Completed:'badge-green' };
 
   return `
@@ -753,6 +754,9 @@ function newBrewLog() {
 }
 
 function openBrewLog(id) {
+  console.log('openBrewLog called with:', id, typeof id);
+  const found = state.brewLogs.find(b=>b.id===id);
+  console.log('found log:', found);
   window._openBrewId = id;
   renderContent();
 }
