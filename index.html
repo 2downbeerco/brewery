@@ -2567,6 +2567,22 @@ function renderPOList() {
 }
 
 // ── RM helpers ────────────────────────────────────────────────────────────────
+function fixPOIds() {
+  const seen = new Set();
+  let maxId = 0;
+  state.purchaseOrders.forEach(p => { if (p.id != null) maxId = Math.max(maxId, +p.id); });
+  let nextId = maxId + 1;
+  state.purchaseOrders.forEach(p => {
+    const key = String(p.id);
+    if (seen.has(key) || p.id == null) {
+      p.id = nextId++;
+    } else {
+      seen.add(key);
+    }
+  });
+  state.nextPOId = nextId;
+}
+
 function fixRMIds() {
   // Reassign unique sequential IDs to any RM items that have duplicate IDs
   const seen = new Set();
@@ -3999,6 +4015,7 @@ function saveBeer() {
     setSyncStatus('Live', '#16A34A');
     setTimeout(() => setSyncStatus('', ''), 2000);
     fixRMIds();
+    fixPOIds();
     saveState();
     try { renderNav(); renderContent(); } catch(e) {}
     startAutoSync();
