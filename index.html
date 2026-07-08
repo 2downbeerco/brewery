@@ -402,7 +402,6 @@ function computeBreweryBeers() {
     });
   });
 
-  console.log('computeBreweryBeers result:', result);
   return result;
 }
 
@@ -421,8 +420,7 @@ function saveState() {
 }
 
 async function pushBreweryBeersToKegs(breweryBeers) {
-  console.log('pushBreweryBeersToKegs called with:', breweryBeers);
-  if (!breweryBeers || !breweryBeers.length) { console.log('empty breweryBeers, skipping'); return; }
+  if (!breweryBeers || !breweryBeers.length) return;
   try {
     // 1. Read current breweryBeers from bar order app
     const res = await fetch(SB_URL + '/rest/v1/kegs?select=id,data&id=eq.__brewery_beers__', { headers: SB_HDR });
@@ -436,7 +434,7 @@ async function pushBreweryBeersToKegs(breweryBeers) {
     const merged = [...existing];
 
     breweryBeers.forEach(brewBatch => {
-      const idx = merged.findIndex(b => b.beer === brewBatch.beer && String(b.batch) === String(brewBatch.batch));
+      const idx = merged.findIndex(b => b.beer === brewBatch.beer && String(b.batch).replace(/^0+/,'') === String(brewBatch.batch).replace(/^0+/,''));
       if (idx < 0) {
         // New batch — add it
         merged.push({ ...brewBatch, inactive: false });
