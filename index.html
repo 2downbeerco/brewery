@@ -402,6 +402,7 @@ function computeBreweryBeers() {
     });
   });
 
+  console.log('computeBreweryBeers result:', result);
   return result;
 }
 
@@ -420,7 +421,8 @@ function saveState() {
 }
 
 async function pushBreweryBeersToKegs(breweryBeers) {
-  if (!breweryBeers || !breweryBeers.length) return;
+  console.log('pushBreweryBeersToKegs called with:', breweryBeers);
+  if (!breweryBeers || !breweryBeers.length) { console.log('empty breweryBeers, skipping'); return; }
   try {
     // 1. Read current breweryBeers from bar order app
     const res = await fetch(SB_URL + '/rest/v1/kegs?select=id,data&id=eq.__brewery_beers__', { headers: SB_HDR });
