@@ -363,7 +363,7 @@ function computeBreweryBeers() {
     if (!beerObj || beerObj.active === false) return;
     (inv.batches||[]).forEach(b => {
       const litres = b.litres || (b.kegs20||0)*20 + (b.kegs50||0)*50;
-      if (litres <= 0) return; // skip exhausted batches
+      // Still push even if litres = 0 so the deactivation logic can mark it inactive
       // Strip beer code prefix from batchNo if present (e.g. "BB52" → "52")
       let batchNo = b.batchNo || (inv.beer + '-CR');
       if (batchNo.toUpperCase().startsWith(inv.beer.toUpperCase())) {
@@ -427,46 +427,44 @@ async function pushBreweryBeersToKegs(breweryBeers) {
     const rows = await res.json();
     const existing = rows[0]?.data?.breweryBeers || [];
 
-    // 2. Safe merge rules:
-    //    - New batch (not in bar order yet) → add it
-    //    - Existing active batch → only increase litres, never reduce (bar order manages reductions)
-    //    - Inactive/consumed batches → never touch
+    // 2. Merge rules:
+    //    - New batch → add it, set litres = totalLitres = current cold room quantity (first push = brewed amount)
+    //    - Existing active batch → update totalLitres only upward (captures re-additions/corrections)
+    //      The bar order app uses totalLitres as the fixed brewed base; bb.litres is ignored there.
+    //    - Inactive batches → never touch
     const merged = [...existing];
 
     breweryBeers.forEach(brewBatch => {
       const idx = merged.findIndex(b => b.beer === brewBatch.beer && String(b.batch).replace(/^0+/,'') === String(brewBatch.batch).replace(/^0+/,''));
       if (idx < 0) {
-        // New batch — add it
-        merged.push({ ...brewBatch, inactive: false });
+        // New batch — totalLitres = first-seen litres (the original brewed quantity)
+        merged.push({ ...brewBatch, inactive: false, totalLitres: brewBatch.litres });
       } else if (!merged[idx].inactive) {
-        // Active batch — if source changed (e.g. tank → coldroom), always sync litres
-        // If same source, only increase (bar order manages reductions via dispatches)
-        if (brewBatch.source !== merged[idx].source || brewBatch.litres > merged[idx].litres) {
-          merged[idx].litres = brewBatch.litres;
-        }
-        // Update source metadata
-        merged[idx].source   = brewBatch.source;
-        merged[idx].tankId   = brewBatch.tankId   || null;
-        merged[idx].tankName = brewBatch.tankName || null;
+        // Only increase totalLitres (correction upward allowed, never reduce)
+        const prevTotal = merged[idx].totalLitres || merged[idx].litres || 0;
+        merged[idx].totalLitres = Math.max(prevTotal, brewBatch.litres);
+        merged[idx].litres      = merged[idx].totalLitres;
+        merged[idx].source      = brewBatch.source;
+        merged[idx].tankId      = brewBatch.tankId   || null;
+        merged[idx].tankName    = brewBatch.tankName || null;
       }
       // Inactive batches — skip entirely
     });
 
-    // 3. Deactivate exhausted batches:
-    //    - coldroom: no longer in beerInventory (litres hit 0)
-    //    - tank: tank vol = 0
+    // 3. Deactivate exhausted batches
     merged.forEach((b, idx) => {
       if (b.inactive) return;
       if (b.source === 'coldroom') {
         const stillInBrewOps = breweryBeers.some(bb =>
           bb.beer === b.beer && String(bb.batch) === String(b.batch)
         );
-        if (!stillInBrewOps) merged[idx] = { ...b, inactive: true, litres: 0 };
+        if (!stillInBrewOps) merged[idx] = { ...b, inactive: true };
       } else if (b.source === 'tank' && b.tankId) {
         const tank = state.tanks.find(t=>String(t.id)===String(b.tankId));
-        if (tank && (tank.vol||0) <= 0) merged[idx] = { ...b, inactive: true, litres: 0 };
+        if (tank && (tank.vol||0) <= 0) merged[idx] = { ...b, inactive: true };
       }
     });
+
     await fetch(SB_URL + '/rest/v1/kegs', {
       method: 'POST',
       headers: { ...SB_HDR, 'Prefer': 'resolution=merge-duplicates,return=minimal' },
