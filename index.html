@@ -2030,8 +2030,15 @@ function confirmTransferToColdRoom() {
   if (!vol || vol <= 0) { toast('Enter a valid volume', false); return; }
   document.getElementById('transfer-cr-modal').style.display = 'none';
 
-  const t = state.tanks.find(x=>x.id===tankId);
-  if (!t) return;
+  const ti = state.tanks.findIndex(x=>x.id===tankId);
+  if (ti<0) return;
+  const t = state.tanks[ti];
+
+  // Adjust batchVol: wastage = tank vol - kegged vol; actual batch = batchVol - wastage
+  const wastage = (t.vol||0) - vol;
+  if (t.batchVol && wastage > 0) {
+    state.tanks[ti].batchVol = Math.max(vol, t.batchVol - wastage);
+  }
 
   // Add to cold room inventory
   let invIdx = state.beerInventory.findIndex(x=>x.beer===t.beer);
