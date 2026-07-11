@@ -1815,6 +1815,24 @@ function renderTanks() {
       <div class="modal-box" style="max-width:640px;" id="tank-detail-box"></div>
     </div>
 
+    <!-- Transfer to Cold Room Modal -->
+    <div id="transfer-cr-modal" class="modal-overlay" style="display:none;" onclick="if(event.target===this)this.style.display='none'">
+      <div class="modal-box" style="max-width:420px;">
+        <div class="modal-title">Transfer to Cold Room</div>
+        <input type="hidden" id="tcr-tank-id">
+        <div id="tcr-info" style="font-size:14px;color:var(--muted);margin-bottom:16px;"></div>
+        <div class="form-group">
+          <label class="lbl">Volume kegged (L)</label>
+          <input class="inp" id="tcr-volume" type="number" step="0.1">
+          <div style="font-size:11px;color:var(--muted);margin-top:4px;">Enter actual volume kegged — difference from tank volume accounts for wastage</div>
+        </div>
+        <div class="modal-actions">
+          <button class="btn btn-ghost" onclick="document.getElementById('transfer-cr-modal').style.display='none'">Cancel</button>
+          <button class="btn btn-primary" onclick="confirmTransferToColdRoom()">Transfer</button>
+        </div>
+      </div>
+    </div>
+
     <!-- Add/Edit Tank Modal -->
     <div id="tank-modal" class="modal-overlay" style="display:none;" onclick="if(event.target===this)closeTankModal()">
       <div class="modal-box">
@@ -1998,33 +2016,19 @@ function closeTankDetail() { document.getElementById('tank-detail-modal').style.
 function openTransferToColdRoom(tankId) {
   const t = state.tanks.find(x=>x.id===tankId);
   if (!t) return;
-  const modal = document.createElement('div');
-  modal.id = 'transfer-cr-modal';
-  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:9999;display:flex;align-items:center;justify-content:center;';
-  modal.innerHTML = `
-    <div class="modal-box" style="max-width:420px;background:var(--card);">
-      <div class="modal-title">Transfer to Cold Room</div>
-      <div style="font-size:14px;color:var(--muted);margin-bottom:16px;">
-        <strong>${beerName(t.beer)}</strong> — Batch ${t.batchNo||'—'}<br>
-        Current tank volume: <strong>${t.vol}L</strong>
-      </div>
-      <div class="form-group">
-        <label class="lbl">Volume kegged (L)</label>
-        <input class="inp" id="tcr-volume" type="number" step="0.1" value="${t.vol}" placeholder="${t.vol}">
-        <div style="font-size:11px;color:var(--muted);margin-top:4px;">Enter actual volume kegged — difference from tank volume accounts for wastage</div>
-      </div>
-      <div class="modal-actions">
-        <button class="btn btn-ghost" onclick="document.getElementById('transfer-cr-modal').remove()">Cancel</button>
-        <button class="btn btn-primary" onclick="confirmTransferToColdRoom('${tankId}')">Transfer</button>
-      </div>
-    </div>`;
-  document.body.appendChild(modal);
+  let batchNo = t.batchNo || '';
+  if (batchNo.toUpperCase().startsWith(t.beer.toUpperCase())) batchNo = batchNo.slice(t.beer.length);
+  document.getElementById('tcr-info').innerHTML = `<strong>${beerName(t.beer)}</strong> — Batch ${batchNo||'—'}<br>Current tank volume: <strong>${t.vol}L</strong>`;
+  document.getElementById('tcr-volume').value = t.vol;
+  document.getElementById('tcr-tank-id').value = tankId;
+  document.getElementById('transfer-cr-modal').style.display = 'flex';
 }
 
-function confirmTransferToColdRoom(tankId) {
+function confirmTransferToColdRoom() {
+  const tankId = document.getElementById('tcr-tank-id').value;
   const vol = +document.getElementById('tcr-volume').value;
   if (!vol || vol <= 0) { toast('Enter a valid volume', false); return; }
-  document.getElementById('transfer-cr-modal').remove();
+  document.getElementById('transfer-cr-modal').style.display = 'none';
 
   const t = state.tanks.find(x=>x.id===tankId);
   if (!t) return;
