@@ -1993,6 +1993,8 @@ function openTankDetail(id) {
   document.getElementById('tank-detail-modal').style.display='flex';
 }
 
+function closeTankDetail() { document.getElementById('tank-detail-modal').style.display='none'; }
+
 function openTransferToColdRoom(tankId) {
   const t = state.tanks.find(x=>x.id===tankId);
   if (!t) return;
