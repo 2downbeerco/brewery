@@ -391,14 +391,14 @@ function computeBreweryBeers() {
       batchNo = batchNo.slice(tank.beer.length);
     }
     result.push({
-      beer:     tank.beer,
-      batch:    batchNo,
-      litres:   tank.vol || 0,
-      brewDate: tank.since || '',
-      inactive: false,
-      source:   'tank',
-      tankId:   tank.id,
-      tankName: tank.name,
+      beer:      tank.beer,
+      batch:     batchNo,
+      litres:    tank.batchVol || tank.vol || 0,  // batchVol = total brewed; bar order deducts dispatches from this
+      brewDate:  tank.since || '',
+      inactive:  false,
+      source:    'tank',
+      tankId:    tank.id,
+      tankName:  tank.name,
     });
   });
 
