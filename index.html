@@ -2064,6 +2064,9 @@ function confirmTransferToColdRoom() {
     state.beerInventory[invIdx].batches.push({ batchNo, litres: vol });
   }
 
+  // Save cold room addition first before clearing tank
+  saveState();
+
   // Clear tank — trigger archive prompt
   const newObj = { ...t, stage: 'Empty', beer: null, batchNo: null, vol: 0, batchVol: null, since: null, temp: null };
   closeTankDetail();
