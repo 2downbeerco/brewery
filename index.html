@@ -440,12 +440,15 @@ async function pushBreweryBeersToKegs(breweryBeers) {
         // New batch — totalLitres = first-seen litres (the original brewed quantity)
         merged.push({ ...brewBatch, inactive: false, totalLitres: brewBatch.litres });
       } else if (!merged[idx].inactive) {
-        // Always sync litres — brew ops is source of truth for all stock
-        merged[idx].totalLitres = brewBatch.litres;
-        merged[idx].litres      = brewBatch.litres;
-        merged[idx].source      = brewBatch.source;
-        merged[idx].tankId      = brewBatch.tankId   || null;
-        merged[idx].tankName    = brewBatch.tankName || null;
+        if (brewBatch.source === 'tank') {
+          // Tank: always sync batchVol as bb.litres (authoritative batch size)
+          merged[idx].totalLitres = brewBatch.litres;
+          merged[idx].litres      = brewBatch.litres;
+        }
+        // Cold room: never change bb.litres — bar order manages remaining via dispatches
+        merged[idx].source   = brewBatch.source;
+        merged[idx].tankId   = brewBatch.tankId   || null;
+        merged[idx].tankName = brewBatch.tankName || null;
       }
       // Inactive batches — skip entirely
     });
