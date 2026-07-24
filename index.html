@@ -2036,11 +2036,10 @@ function confirmTransferToColdRoom() {
   if (ti<0) return;
   const t = state.tanks[ti];
 
-  // Adjust batchVol: wastage = tank vol - kegged vol; actual batch = batchVol - wastage
-  const wastage = (t.vol||0) - vol;
-  if (t.batchVol && wastage > 0) {
-    state.tanks[ti].batchVol = Math.max(vol, t.batchVol - wastage);
-  }
+  // Adjust batchVol: correct for both wastage (kegged < tank) and surplus (kegged > tank)
+  const diff = vol - (t.vol||0); // positive = surplus, negative = wastage
+  const correctedBatchVol = t.batchVol ? Math.max(vol, t.batchVol + diff) : vol;
+  state.tanks[ti].batchVol = correctedBatchVol;
 
   // Add to cold room inventory
   let invIdx = state.beerInventory.findIndex(x=>x.beer===t.beer);
@@ -2063,12 +2062,36 @@ function confirmTransferToColdRoom() {
   // Save cold room addition first before clearing tank
   saveState();
 
+  // Directly push corrected batch size to bar order — tank is about to become
+  // inactive/empty so it won't be picked up by the normal computeBreweryBeers push
+  pushBatchSizeCorrection(t.beer, batchNo, correctedBatchVol);
+
   // Clear tank — trigger archive prompt
   const newObj = { ...t, stage: 'Empty', beer: null, batchNo: null, vol: 0, batchVol: null, since: null, temp: null };
   closeTankDetail();
   showArchivePrompt(tankId, t, newObj);
 
   toast(`${vol}L transferred to cold room`);
+}
+
+async function pushBatchSizeCorrection(beer, batch, correctBatchVol) {
+  try {
+    const res = await fetch(SB_URL + '/rest/v1/kegs?select=id,data&id=eq.__brewery_beers__', { headers: SB_HDR });
+    const rows = await res.json();
+    const current = rows[0]?.data?.breweryBeers || [];
+    const idx = current.findIndex(b => b.beer===beer && String(b.batch).replace(/^0+/,'')===String(batch).replace(/^0+/,''));
+    if (idx>=0) {
+      current[idx].litres = correctBatchVol;
+      current[idx].totalLitres = correctBatchVol;
+      await fetch(SB_URL + '/rest/v1/kegs', {
+        method: 'POST',
+        headers: { ...SB_HDR, 'Prefer': 'resolution=merge-duplicates,return=minimal' },
+        body: JSON.stringify({ id: '__brewery_beers__', data: { breweryBeers: current }, updated_at: new Date().toISOString() })
+      });
+    }
+  } catch(e) {
+    console.warn('pushBatchSizeCorrection error:', e.message);
+  }
 }
 
 function changeTankStage(id, newStage) {
