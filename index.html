@@ -273,6 +273,10 @@ function startAutoSync() {
       let changed = false;
       rows.forEach(row => {
         if (!SYNC_KEYS.includes(row.key)) return;
+        // Skip overwriting keys we just wrote locally — avoids race condition
+        // where our own upsert hasn't committed yet when this pull runs
+        const lastWrite = window._lastLocalWrite && window._lastLocalWrite[row.key];
+        if (lastWrite && (Date.now() - lastWrite) < 6000) return;
         const fresh = JSON.stringify(row.value);
         const current = JSON.stringify(state[row.key]);
         if (fresh !== current) {
@@ -409,8 +413,11 @@ function saveState() {
   // Recompute breweryBeers before syncing
   state.breweryBeers = computeBreweryBeers();
 
+  window._lastLocalWrite = window._lastLocalWrite || {};
+
   SYNC_KEYS.forEach(key => {
     localStorage.setItem('brew_' + key, JSON.stringify(state[key]));
+    window._lastLocalWrite[key] = Date.now();
     sbUpsertBrewKey(key, state[key]).catch(e => console.error('Supabase save error:', key, e));
   });
 
