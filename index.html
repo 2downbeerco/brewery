@@ -630,8 +630,12 @@ function renderDashboard() {
   const activeTanks = state.tanks.filter(t=>t.beer).length;
   const emptyTanks  = state.tanks.filter(t=>!t.beer).length;
   const lowStock    = state.rawMaterials.filter(r=>r.stock<=r.reorder).length;
-  const totalLitres = state.beerInventory.reduce((s,b)=>s+beerInvTotalLitres(b),0);
-  const totalBatches = state.beerInventory.reduce((s,b)=>s+(b.batches||[]).length,0);
+  const validColdRoom = state.beerInventory.filter(b=>{
+    const beerObj = state.beers.find(x=>x.code===b.beer);
+    return beerObj && beerObj.active !== false;
+  });
+  const totalLitres = validColdRoom.reduce((s,b)=>s+beerInvTotalLitres(b),0);
+  const totalBatches = validColdRoom.reduce((s,b)=>s+(b.batches||[]).length,0);
   const nextBrew    = state.schedule.filter(s=>s.status==='Planned').sort((a,b)=>a.date.localeCompare(b.date))[0];
   const activeBrew  = state.brewLogs.find(b=>b.status==='In Progress');
 
@@ -667,10 +671,7 @@ function renderDashboard() {
       </div>
       <div class="card">
         <div class="section-title">Cold Room — Beer Stock</div>
-        ${state.beerInventory.filter(b=>{
-          const beerObj = state.beers.find(x=>x.code===b.beer);
-          return beerObj && beerObj.active !== false;
-        }).map(b=>{
+        ${validColdRoom.map(b=>{
           const litres = beerInvTotalLitres(b);
           const batchCount = (b.batches||[]).length;
           return `
