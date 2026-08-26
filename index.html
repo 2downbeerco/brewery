@@ -2193,6 +2193,23 @@ function editTank(id){
   document.getElementById('tank-modal').style.display='flex';
 }
 function closeTankModal(){document.getElementById('tank-modal').style.display='none';}
+async function removeOldBatch(beer, batch) {
+  try {
+    const res = await fetch(SB_URL + '/rest/v1/kegs?select=id,data&id=eq.__brewery_beers__', { headers: SB_HDR });
+    const rows = await res.json();
+    const current = rows[0]?.data?.breweryBeers || [];
+    const updated = current.filter(b => !(b.beer===beer && String(b.batch).replace(/^0+/,'')===String(batch).replace(/^0+/,'')));
+    if (updated.length === current.length) return; // nothing to remove
+    await fetch(SB_URL + '/rest/v1/kegs', {
+      method: 'POST',
+      headers: { ...SB_HDR, 'Prefer': 'resolution=merge-duplicates,return=minimal' },
+      body: JSON.stringify({ id: '__brewery_beers__', data: { breweryBeers: updated }, updated_at: new Date().toISOString() })
+    });
+  } catch(e) {
+    console.warn('removeOldBatch error:', e.message);
+  }
+}
+
 function saveTank(){
   const id=document.getElementById('tm-id').value;
   const obj={
@@ -2220,6 +2237,12 @@ function saveTank(){
       return;
     }
     const i=state.tanks.findIndex(x=>x.id===id);
+
+    // Detect batch number change (same beer, different batch) — remove old batch entirely from bar order
+    if (existing && existing.beer && obj.beer===existing.beer && obj.batchNo && existing.batchNo && obj.batchNo!==existing.batchNo) {
+      removeOldBatch(existing.beer, existing.batchNo);
+    }
+
     state.tanks[i]={...state.tanks[i],...obj};
   } else {
     obj.id='T'+state.nextTankId++;
