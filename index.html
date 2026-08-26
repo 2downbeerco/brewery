@@ -667,7 +667,10 @@ function renderDashboard() {
       </div>
       <div class="card">
         <div class="section-title">Cold Room — Beer Stock</div>
-        ${state.beerInventory.filter(b=>state.beers.find(x=>x.code===b.beer)).map(b=>{
+        ${state.beerInventory.filter(b=>{
+          const beerObj = state.beers.find(x=>x.code===b.beer);
+          return beerObj && beerObj.active !== false;
+        }).map(b=>{
           const litres = beerInvTotalLitres(b);
           const batchCount = (b.batches||[]).length;
           return `
