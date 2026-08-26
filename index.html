@@ -3417,13 +3417,19 @@ function beerInvTotalLitres(invItem) {
 function renderBeerInv() {
   const readyTanks = state.tanks.filter(t=>t.stage==='Ready'&&t.beer&&t.vol>0);
   const tankLitres = readyTanks.reduce((s,t)=>s+(t.vol||0),0);
+  // Clean up stray/invalid cold room entries (beer code not found in state.beers)
+  state.beerInventory = state.beerInventory.filter(inv => state.beers.find(b=>b.code===inv.beer));
   const coldRoomLitres = state.beerInventory.reduce((s,inv)=>s+beerInvTotalLitres(inv),0);
   const totalLitres = coldRoomLitres + tankLitres;
 
   const activeCodes = [...new Set([
     ...state.beerInventory.map(b=>b.beer),
     ...readyTanks.map(t=>t.beer)
-  ])].filter(Boolean).sort((a,b)=>beerName(a).localeCompare(beerName(b)));
+  ])].filter(code => {
+    if (!code) return false;
+    const beerObj = state.beers.find(b=>b.code===code);
+    return beerObj && beerObj.active !== false; // must exist and be active
+  }).sort((a,b)=>beerName(a).localeCompare(beerName(b)));
 
   return `
         ${(()=>{
