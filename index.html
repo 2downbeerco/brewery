@@ -630,8 +630,8 @@ function renderDashboard() {
   const activeTanks = state.tanks.filter(t=>t.beer).length;
   const emptyTanks  = state.tanks.filter(t=>!t.beer).length;
   const lowStock    = state.rawMaterials.filter(r=>r.stock<=r.reorder).length;
-  const totalKegs   = state.beerInventory.reduce((s,b)=>s+b.kegs20+b.kegs50,0);
-  const totalLitres = state.beerInventory.reduce((s,b)=>s+b.litres,0);
+  const totalLitres = state.beerInventory.reduce((s,b)=>s+beerInvTotalLitres(b),0);
+  const totalBatches = state.beerInventory.reduce((s,b)=>s+(b.batches||[]).length,0);
   const nextBrew    = state.schedule.filter(s=>s.status==='Planned').sort((a,b)=>a.date.localeCompare(b.date))[0];
   const activeBrew  = state.brewLogs.find(b=>b.status==='In Progress');
 
@@ -645,7 +645,7 @@ function renderDashboard() {
   return `
     <div class="grid4">
       <div class="stat-card"><div class="stat-num">${activeTanks}</div><div class="stat-lbl">Active Tanks</div><div class="stat-sub">${emptyTanks} empty</div></div>
-      <div class="stat-card"><div class="stat-num">${totalKegs}</div><div class="stat-lbl">Kegs in Cold Room</div><div class="stat-sub">${totalLitres}L across all beers</div></div>
+      <div class="stat-card"><div class="stat-num">${totalLitres}L</div><div class="stat-lbl">Cold Room Stock</div><div class="stat-sub">${totalBatches} batch${totalBatches!==1?'es':''}</div></div>
       <div class="stat-card"><div class="stat-num" style="color:${lowStock?'var(--red)':'var(--green)'}">${lowStock}</div><div class="stat-lbl">Low Stock Items</div><div class="stat-sub">raw materials below reorder</div></div>
       <div class="stat-card"><div class="stat-num" style="font-size:22px;">${nextBrew?fmtDate(nextBrew.date):'—'}</div><div class="stat-lbl">Next Brew</div><div class="stat-sub">${nextBrew?beerName(nextBrew.beer)+' · '+nextBrew.vol+'L':'Nothing scheduled'}</div></div>
     </div>
@@ -667,15 +667,18 @@ function renderDashboard() {
       </div>
       <div class="card">
         <div class="section-title">Cold Room — Beer Stock</div>
-        ${state.beerInventory.map(b=>`
+        ${state.beerInventory.filter(b=>state.beers.find(x=>x.code===b.beer)).map(b=>{
+          const litres = beerInvTotalLitres(b);
+          const batchCount = (b.batches||[]).length;
+          return `
           <div class="keg-row">
             <div style="display:flex;align-items:center;gap:10px;">
               <div class="beer-dot" style="background:${beerColor(b.beer)}"></div>
               <div><div style="font-size:14px;font-weight:600;">${beerName(b.beer)}</div>
-              <div style="font-size:12px;color:var(--muted);">${b.kegs20}×20L · ${b.kegs50}×50L</div></div>
+              <div style="font-size:12px;color:var(--muted);">${batchCount} batch${batchCount!==1?'es':''}</div></div>
             </div>
-            <div style="font-size:16px;font-weight:700;color:${b.litres===0?'var(--red)':b.litres<80?'var(--orange)':'var(--text)'};">${b.litres}L</div>
-          </div>`).join('')}
+            <div style="font-size:16px;font-weight:700;color:${litres===0?'var(--red)':litres<80?'var(--orange)':'var(--text)'};">${litres}L</div>
+          </div>`;}).join('') || '<div style="color:var(--muted);font-size:13px;padding:8px 0;">No cold room stock recorded.</div>'}
       </div>
     </div>`;
 }
@@ -4143,10 +4146,7 @@ function saveBeer() {
     state.beers[i] = {...state.beers[i],...obj};
   } else {
     state.beers.push(obj);
-    // Add to beer inventory if new
-    if(!state.beerInventory.find(b=>b.beer===code)){
-      state.beerInventory.push({id:Date.now(),beer:code,kegs20:0,kegs50:0,litres:0,location:'Cold Room'});
-    }
+    // No need to pre-create an empty cold room entry — batches are added on demand via + Add Batch
   }
   saveState();closeBeerModal();renderContent();
   toast(origCode?'Beer updated':'New beer added');
