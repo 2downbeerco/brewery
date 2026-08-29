@@ -1638,6 +1638,28 @@ function updateBrewField(field, val) {
   saveState();
 }
 
+// Deducts qty from a raw material's batches (FIFO by delivery date).
+// Malt deducts from breweryQty (grain on the brew floor); other categories from qty.
+// Returns the amount actually deducted (may be less than requested if insufficient stock).
+function deductFromBatches(rm, qtyNeeded) {
+  if (!rm.batches || !rm.batches.length || qtyNeeded<=0) return 0;
+  const isMalt = rm.category==='Malt';
+  const sorted = [...rm.batches].sort((a,b)=>(a.deliveryDate||'').localeCompare(b.deliveryDate||''));
+  let remaining = qtyNeeded;
+  let deducted = 0;
+  for (const b of sorted) {
+    if (remaining<=0) break;
+    const avail = isMalt ? (b.breweryQty||0) : (b.qty||0);
+    if (avail<=0) continue;
+    const take = Math.min(avail, remaining);
+    if (isMalt) b.breweryQty = Math.round((b.breweryQty-take)*1000)/1000;
+    else b.qty = Math.round((b.qty-take)*1000)/1000;
+    remaining -= take;
+    deducted += take;
+  }
+  return Math.round(deducted*1000)/1000;
+}
+
 function startBrew(id) {
   const i = state.brewLogs.findIndex(b=>b.id===id);
   state.brewLogs[i].status = 'In Progress';
@@ -1649,12 +1671,14 @@ function completeBrew(id) {
   const log = state.brewLogs.find(b=>b.id===id);
   if (!log) return;
 
-  // Build deduction summary
+  // Build deduction summary — check against actual batch-level brewery stock, not derived .stock
   const allIngs = [...log.grains,...log.hops,...log.yeast,...log.other].filter(i=>i.rmId&&i.qty>0);
   const issues = [];
   allIngs.forEach(ing=>{
     const rm = state.rawMaterials.find(r=>r.id==ing.rmId);
-    if (rm && rm.stock < ing.qty) issues.push(`${rm.name}: need ${ing.qty} ${ing.unit}, only ${rm.stock} ${rm.unit}`);
+    if (!rm) return;
+    const { total } = rmStatus(rm);
+    if (total < ing.qty) issues.push(`${rm.name}: need ${ing.qty} ${ing.unit}, only ${total} ${rm.unit}`);
   });
 
   let msg = `Mark "${beerName(log.beer)}" brew as Complete and deduct ${allIngs.length} ingredient(s) from stock?`;
@@ -1662,10 +1686,15 @@ function completeBrew(id) {
 
   if (!confirm(msg)) return;
 
-  // Deduct
+  // Deduct from actual batches (FIFO), not the derived .stock field —
+  // .stock gets recomputed from batches on every render, so writing to it
+  // directly has no lasting effect.
   allIngs.forEach(ing=>{
-    const i = state.rawMaterials.findIndex(r=>r.id==ing.rmId);
-    if (i>=0) state.rawMaterials[i].stock = Math.max(0, Math.round((state.rawMaterials[i].stock - ing.qty)*1000)/1000);
+    const rm = state.rawMaterials.find(r=>r.id==ing.rmId);
+    if (rm) {
+      deductFromBatches(rm, ing.qty);
+      rmStatus(rm);
+    }
   });
 
   const li = state.brewLogs.findIndex(b=>b.id===id);
@@ -3437,27 +3466,33 @@ function completeStockTake(id) {
   if(counted===0){toast('Count at least one item before completing',false);return;}
   if(!confirm(`Complete stock take? ${counted} of ${st.lines.length} items counted. Stock levels will be updated to actual counts.`)) return;
 
-  // Update stock levels to actual counts
+  // Apply variance (actual - expected) to the batches array so it actually
+  // affects displayed stock. .stock is a derived field recomputed from
+  // batches on every render — writing to it directly has no lasting effect.
   st.lines.forEach(line=>{
     if(line.actual==null) return;
-    const i = state.rawMaterials.findIndex(r=>r.id===line.rmId);
-    if(i<0) return;
-    const r = state.rawMaterials[i];
-    if(r.category==='Malt'){
-      // distribute actual across warehouse+brewery proportionally
-      const prev = (r.warehouseStock||0)+(r.breweryStock||0);
-      if(prev>0){
-        const ratio = line.actual/prev;
-        r.warehouseStock = Math.round((r.warehouseStock||0)*ratio*1000)/1000;
-        r.breweryStock   = Math.round((r.breweryStock||0)*ratio*1000)/1000;
-      } else {
-        r.warehouseStock = line.actual;
-        r.breweryStock   = 0;
-      }
-      r.stock = r.warehouseStock + r.breweryStock;
+    const r = state.rawMaterials.find(x=>x.id===line.rmId);
+    if(!r) return;
+    const { total: currentTotal } = rmStatus(r);
+    const variance = Math.round((line.actual - currentTotal)*1000)/1000;
+    if (variance === 0) return;
+
+    if (!r.batches || !r.batches.length) {
+      // No batches to adjust — create one to hold the counted stock
+      r.batches = [{ batchNo: 'ST-'+st.id, deliveryDate: st.date, cost: r.lastCost||0,
+        ...(r.category==='Malt' ? {warehouseQty:0, breweryQty: Math.max(0,line.actual)} : {qty: Math.max(0,line.actual)}) }];
     } else {
-      r.stock = line.actual;
+      // Apply variance to the most recent batch (by delivery date), matching
+      // the convention used elsewhere for simple stock adjustments
+      const sorted = [...r.batches].sort((a,b)=>(b.deliveryDate||'').localeCompare(a.deliveryDate||''));
+      const target = sorted[0];
+      if (r.category==='Malt') {
+        target.breweryQty = Math.max(0, Math.round(((target.breweryQty||0)+variance)*1000)/1000);
+      } else {
+        target.qty = Math.max(0, Math.round(((target.qty||0)+variance)*1000)/1000);
+      }
     }
+    rmStatus(r);
   });
 
   st.status = 'Completed';
