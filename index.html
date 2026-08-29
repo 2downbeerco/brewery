@@ -1166,7 +1166,8 @@ function renderBrewDetail(id) {
     // ── Step 6: Wort Transfer to Boil Kettle + Sparging ───────────────────
     const spargeSamples = ex.spargeSamples || [{}];
     const transferSamples = ex.transferSamples || [{}];
-    const s6 = stepCard('🪣','Wort Transfer to Boil Kettle', ex.transferKettleDone, `
+    const tankIconSvg = '<svg width="14" height="17" viewBox="0 0 64 124" fill="none" xmlns="http://www.w3.org/2000/svg" style="vertical-align:middle;"><line x1="22" y1="108" x2="16" y2="120" stroke="currentColor" stroke-width="4" stroke-linecap="round"/><line x1="42" y1="108" x2="48" y2="120" stroke="currentColor" stroke-width="4" stroke-linecap="round"/><line x1="12" y1="120" x2="20" y2="120" stroke="currentColor" stroke-width="3" stroke-linecap="round"/><line x1="44" y1="120" x2="52" y2="120" stroke="currentColor" stroke-width="3" stroke-linecap="round"/><polygon points="9.5,88 54.5,88 32,108" fill="currentColor" opacity="0.5"/><rect x="9.5" y="22" width="45" height="66" fill="currentColor" opacity="0.25"/><rect x="9.5" y="22" width="45" height="66" stroke="currentColor" stroke-width="3"/><path d="M9.5 22 Q9.5 4 32 4 Q54.5 4 54.5 22" fill="currentColor" opacity="0.4" stroke="currentColor" stroke-width="3"/><ellipse cx="32" cy="22" rx="22.5" ry="5" fill="currentColor" opacity="0.6"/><rect x="28" y="108" width="8" height="6" rx="1" fill="currentColor"/></svg>';
+    const s6 = stepCard(tankIconSvg,'Wort Transfer to Boil Kettle', ex.transferKettleDone, `
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px;">
         ${tf('transferKettleStart','Transfer Start Time','HH:MM')}
         ${tn('transferKettleStartGravity','°Plato at Start','e.g. 12.5','0.1')}
@@ -1240,7 +1241,7 @@ function renderBrewDetail(id) {
     );
 
     // ── Step 9: Transfer to FV ────────────────────────────────────────────
-    const s9 = stepCard('🛢️','Transfer to Fermenter', ex.fvTransferDone, `
+    const s9 = stepCard(tankIconSvg,'Transfer to Fermenter', ex.fvTransferDone, `
       ${startEnd('fvTransferStart','fvTransferEnd')}
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px;">
         <div class="form-group"><label class="lbl" style="font-size:10px;">Target Tank</label>
