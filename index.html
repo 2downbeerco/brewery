@@ -266,10 +266,52 @@ function isModalOpen() {
     .some(el => el.style.display !== 'none' && el.style.display !== '');
 }
 
+// ── Serialized queue for __brewery_beers__ writes ──────────────────────────
+// Multiple functions (saveState's push, transfer corrections, batch removals)
+// all read-modify-write the same Supabase row. Running them concurrently
+// causes lost updates — whichever POST lands last silently wins and discards
+// the other's changes. This queue forces them to run one at a time.
+let _breweryBeersQueue = Promise.resolve();
+function queueBreweryBeersUpdate(updateFn, label) {
+  _breweryBeersQueue = _breweryBeersQueue.then(async () => {
+    try {
+      const res = await fetch(SB_URL + '/rest/v1/kegs?select=id,data&id=eq.__brewery_beers__', { headers: SB_HDR });
+      if (!res.ok) throw new Error('Failed to read current stock: ' + res.status);
+      const rows = await res.json();
+      const current = rows[0]?.data?.breweryBeers || [];
+      const updated = await updateFn(current);
+      if (!updated) return; // updateFn returns falsy to skip write (nothing changed)
+      const putRes = await fetch(SB_URL + '/rest/v1/kegs', {
+        method: 'POST',
+        headers: { ...SB_HDR, 'Prefer': 'resolution=merge-duplicates,return=minimal' },
+        body: JSON.stringify({ id: '__brewery_beers__', data: { breweryBeers: updated }, updated_at: new Date().toISOString() })
+      });
+      if (!putRes.ok) throw new Error('Failed to write updated stock: ' + putRes.status);
+    } catch(e) {
+      console.error(`breweryBeers queue update failed (${label}):`, e);
+      showSyncError(`Failed to sync ${label||'stock'} to bar order app. It may be out of date — please check and retry.`);
+    }
+  });
+  return _breweryBeersQueue;
+}
+
+function showSyncError(msg) {
+  let banner = document.getElementById('sync-error-banner');
+  if (!banner) {
+    banner = document.createElement('div');
+    banner.id = 'sync-error-banner';
+    banner.style.cssText = 'position:fixed;top:0;left:0;right:0;background:#DC2626;color:#fff;padding:10px 16px;font-size:13px;font-weight:600;text-align:center;z-index:99999;display:flex;align-items:center;justify-content:center;gap:12px;';
+    document.body.prepend(banner);
+  }
+  banner.innerHTML = `⚠️ ${msg} <button onclick="this.parentElement.remove()" style="background:rgba(255,255,255,0.2);border:none;color:#fff;border-radius:4px;padding:2px 10px;cursor:pointer;font-size:12px;">Dismiss</button>`;
+}
+
 function startAutoSync() {
+  let consecutiveFailures = 0;
   async function syncNow() {
     try {
       const rows = await sbGetBrewState();
+      consecutiveFailures = 0;
       let changed = false;
       rows.forEach(row => {
         if (!SYNC_KEYS.includes(row.key)) return;
@@ -290,7 +332,12 @@ function startAutoSync() {
         setTimeout(() => setSyncStatus('', ''), 2000);
         try { renderNav(); renderContent(); } catch(e) {}
       }
-    } catch(e) {}
+    } catch(e) {
+      consecutiveFailures++;
+      if (consecutiveFailures === 3) {
+        showSyncError('Lost connection to the server. Your recent changes may not be saved — check your internet connection.');
+      }
+    }
   }
 
   // Realtime via Supabase WebSocket for instant sync
@@ -418,23 +465,24 @@ function saveState() {
   SYNC_KEYS.forEach(key => {
     localStorage.setItem('brew_' + key, JSON.stringify(state[key]));
     window._lastLocalWrite[key] = Date.now();
-    sbUpsertBrewKey(key, state[key]).catch(e => console.error('Supabase save error:', key, e));
+    sbUpsertBrewKey(key, state[key]).catch(e => {
+      console.error('Supabase save error:', key, e);
+      showSyncError(`Failed to save "${key}" — your last change may not have been saved. Check your connection and try the action again.`);
+    });
   });
 
   // Also push breweryBeers to bar order app's kegs table (__brewery_beers__ record)
   // Safe push to bar order app — merges brew ops inventory without overwriting bar order deductions
-  pushBreweryBeersToKegs(state.breweryBeers).catch(e => console.warn('Bar order sync failed:', e.message));
+  pushBreweryBeersToKegs(state.breweryBeers).catch(e => {
+    console.warn('Bar order sync failed:', e.message);
+    showSyncError('Failed to sync stock to the bar order app. Beer Stock there may be out of date.');
+  });
 }
 
 async function pushBreweryBeersToKegs(breweryBeers) {
   if (!breweryBeers || !breweryBeers.length) return;
-  try {
-    // 1. Read current breweryBeers from bar order app
-    const res = await fetch(SB_URL + '/rest/v1/kegs?select=id,data&id=eq.__brewery_beers__', { headers: SB_HDR });
-    const rows = await res.json();
-    const existing = rows[0]?.data?.breweryBeers || [];
-
-    // 2. Merge rules:
+  return queueBreweryBeersUpdate(async (existing) => {
+    // Merge rules:
     //    - New batch → add it, set litres = totalLitres = current cold room quantity (first push = brewed amount)
     //    - Existing active batch → update totalLitres only upward (captures re-additions/corrections)
     //      The bar order app uses totalLitres as the fixed brewed base; bb.litres is ignored there.
@@ -460,12 +508,12 @@ async function pushBreweryBeersToKegs(breweryBeers) {
       // Inactive batches — skip entirely
     });
 
-    // 3. Deactivate exhausted batches
+    // Deactivate exhausted batches
     merged.forEach((b, idx) => {
       if (b.inactive) return;
       if (b.source === 'coldroom') {
         const stillInBrewOps = breweryBeers.some(bb =>
-          bb.beer === b.beer && String(bb.batch) === String(b.batch)
+          String(bb.batch).replace(/^0+/,'') === String(b.batch).replace(/^0+/,'') && bb.beer === b.beer
         );
         if (!stillInBrewOps) merged[idx] = { ...b, inactive: true };
       } else if (b.source === 'tank' && b.tankId) {
@@ -474,14 +522,8 @@ async function pushBreweryBeersToKegs(breweryBeers) {
       }
     });
 
-    await fetch(SB_URL + '/rest/v1/kegs', {
-      method: 'POST',
-      headers: { ...SB_HDR, 'Prefer': 'resolution=merge-duplicates,return=minimal' },
-      body: JSON.stringify({ id: '__brewery_beers__', data: { breweryBeers: merged }, updated_at: new Date().toISOString() })
-    });
-  } catch(e) {
-    console.warn('pushBreweryBeersToKegs error:', e.message);
-  }
+    return merged;
+  }, 'beer inventory');
 }
 
 let state = {
@@ -2089,23 +2131,13 @@ function confirmTransferToColdRoom() {
 }
 
 async function pushBatchSizeCorrection(beer, batch, correctBatchVol) {
-  try {
-    const res = await fetch(SB_URL + '/rest/v1/kegs?select=id,data&id=eq.__brewery_beers__', { headers: SB_HDR });
-    const rows = await res.json();
-    const current = rows[0]?.data?.breweryBeers || [];
+  return queueBreweryBeersUpdate((current) => {
     const idx = current.findIndex(b => b.beer===beer && String(b.batch).replace(/^0+/,'')===String(batch).replace(/^0+/,''));
-    if (idx>=0) {
-      current[idx].litres = correctBatchVol;
-      current[idx].totalLitres = correctBatchVol;
-      await fetch(SB_URL + '/rest/v1/kegs', {
-        method: 'POST',
-        headers: { ...SB_HDR, 'Prefer': 'resolution=merge-duplicates,return=minimal' },
-        body: JSON.stringify({ id: '__brewery_beers__', data: { breweryBeers: current }, updated_at: new Date().toISOString() })
-      });
-    }
-  } catch(e) {
-    console.warn('pushBatchSizeCorrection error:', e.message);
-  }
+    if (idx<0) return null; // nothing to update
+    current[idx].litres = correctBatchVol;
+    current[idx].totalLitres = correctBatchVol;
+    return current;
+  }, `${beer} batch ${batch} size correction`);
 }
 
 function changeTankStage(id, newStage) {
@@ -2201,20 +2233,11 @@ function editTank(id){
 }
 function closeTankModal(){document.getElementById('tank-modal').style.display='none';}
 async function removeOldBatch(beer, batch) {
-  try {
-    const res = await fetch(SB_URL + '/rest/v1/kegs?select=id,data&id=eq.__brewery_beers__', { headers: SB_HDR });
-    const rows = await res.json();
-    const current = rows[0]?.data?.breweryBeers || [];
+  return queueBreweryBeersUpdate((current) => {
     const updated = current.filter(b => !(b.beer===beer && String(b.batch).replace(/^0+/,'')===String(batch).replace(/^0+/,'')));
-    if (updated.length === current.length) return; // nothing to remove
-    await fetch(SB_URL + '/rest/v1/kegs', {
-      method: 'POST',
-      headers: { ...SB_HDR, 'Prefer': 'resolution=merge-duplicates,return=minimal' },
-      body: JSON.stringify({ id: '__brewery_beers__', data: { breweryBeers: updated }, updated_at: new Date().toISOString() })
-    });
-  } catch(e) {
-    console.warn('removeOldBatch error:', e.message);
-  }
+    if (updated.length === current.length) return null; // nothing to remove
+    return updated;
+  }, `removing old ${beer} batch ${batch}`);
 }
 
 function saveTank(){
@@ -2263,10 +2286,11 @@ function showArchivePrompt(tankId, tank, newObj) {
   const beerLabel = (state.beers.find(b=>b.code===tank.beer)?.name||tank.beer) + (tank.batchNo?' Batch '+tank.batchNo:'');
   const div = document.createElement('div');
   div.id = 'archive-overlay';
-  div.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:1000;display:flex;align-items:center;justify-content:center;';
+  div.className = 'modal-overlay';
+  div.style.display = 'flex';
   div.innerHTML = `
-    <div style="background:var(--card);border-radius:16px;padding:28px;max-width:460px;width:90%;box-shadow:0 8px 40px rgba(0,0,0,0.3);">
-      <div style="font-size:18px;font-weight:700;margin-bottom:8px;">Archive Batch Data?</div>
+    <div class="modal-box" style="max-width:460px;">
+      <div class="modal-title">Archive Batch Data?</div>
       <div style="font-size:14px;color:var(--muted);margin-bottom:20px;">
         <strong>${beerLabel}</strong> in ${tank.name} has ${gLog.length} gravity reading${gLog.length!==1?'s':''} and brew data that will be lost when this tank is cleared.
       </div>
@@ -2706,6 +2730,51 @@ function renderPOList() {
 }
 
 // ── RM helpers ────────────────────────────────────────────────────────────────
+function fixScheduleIds() {
+  const seen = new Set();
+  let maxId = 0;
+  state.schedule.forEach(s => { if (s.id != null) maxId = Math.max(maxId, +s.id); });
+  let nextId = maxId + 1;
+  state.schedule.forEach(s => {
+    const key = String(s.id);
+    if (s.id == null || seen.has(key)) s.id = nextId++;
+    else seen.add(key);
+  });
+  state.nextSchedId = nextId;
+}
+
+function fixStockTakeIds() {
+  const seen = new Set();
+  let maxId = 0;
+  state.stockTakes.forEach(s => { if (s.id != null) maxId = Math.max(maxId, +s.id); });
+  let nextId = maxId + 1;
+  state.stockTakes.forEach(s => {
+    const key = String(s.id);
+    if (s.id == null || seen.has(key)) s.id = nextId++;
+    else seen.add(key);
+  });
+  state.nextSTId = nextId;
+}
+
+function fixTankIds() {
+  const seen = new Set();
+  let maxNum = 0;
+  state.tanks.forEach(t => {
+    const m = String(t.id||'').match(/^T(\d+)$/);
+    if (m) maxNum = Math.max(maxNum, +m[1]);
+  });
+  let nextNum = maxNum + 1;
+  state.tanks.forEach(t => {
+    const key = String(t.id);
+    if (t.id == null || seen.has(key)) {
+      t.id = 'T' + (nextNum++);
+    } else {
+      seen.add(key);
+    }
+  });
+  state.nextTankId = nextNum;
+}
+
 function fixBrewLogIds() {
   const seen = new Set();
   let maxId = 0;
@@ -3122,6 +3191,10 @@ function savePO(){
   const id=+document.getElementById('po-id').value;
   const status=document.getElementById('po-status').value;
   const isNew=!id;
+
+  // Snapshot old items BEFORE any mutation — needed for correct qty delta on edits
+  const oldItems = (!isNew ? state.purchaseOrders.find(x=>x.id===id)?.items : null) || [];
+
   const po={
     vendor,
     orderDate:document.getElementById('po-order-date').value,
@@ -3142,7 +3215,6 @@ function savePO(){
   }
 
   // Update stock: new POs add full qty, edits apply the delta (new qty - old qty)
-  const oldPO = !isNew ? state.purchaseOrders.find(x=>x.id===id) : null;
 
   validItems.forEach(item=>{
     const name=item.name.trim();
@@ -3162,7 +3234,7 @@ function savePO(){
     const batchNo=item.batchNo||('PO-'+po.id);
 
     // Calculate qty delta — full qty for new PO, difference for edits
-    const oldItem = oldPO ? oldPO.items.find(oi=>oi.name.trim().toLowerCase()===name.toLowerCase()) : null;
+    const oldItem = oldItems.find(oi=>oi.name.trim().toLowerCase()===name.toLowerCase());
     const qtyDelta = isNew ? item.qty : item.qty - (oldItem?.qty||0);
     if(qtyDelta === 0 && !isNew) {
       // No qty change — still update cost/metadata
@@ -3190,6 +3262,24 @@ function savePO(){
     }
     rmStatus(r);
   });
+
+  // Handle items that existed in the old PO but were removed entirely during edit
+  if (!isNew) {
+    oldItems.forEach(oldItem => {
+      const name = oldItem.name.trim();
+      const stillPresent = validItems.some(vi=>vi.name.trim().toLowerCase()===name.toLowerCase());
+      if (stillPresent || !oldItem.qty) return;
+      const r = state.rawMaterials.find(x=>x.name.toLowerCase()===name.toLowerCase());
+      if (!r || !r.batches) return;
+      const batchNo = oldItem.batchNo || ('PO-'+id);
+      const bi = r.batches.findIndex(b=>b.batchNo===batchNo);
+      if (bi<0) return;
+      const isMalt = r.category==='Malt';
+      if (isMalt) r.batches[bi].warehouseQty = Math.max(0,(r.batches[bi].warehouseQty||0)-oldItem.qty);
+      else r.batches[bi].qty = Math.max(0,(r.batches[bi].qty||0)-oldItem.qty);
+      rmStatus(r);
+    });
+  }
 
   saveState();closePOModal();renderContent();
   toast(`✓ PO saved & stock updated for ${validItems.length} item(s)`);
@@ -3566,50 +3656,6 @@ function renderBeerInv() {
         </div>
       </div>
     </div>`;
-}
-
-async function restoreBarOrderStock() {
-  if (!confirm('This will restore consumed batch history to the bar order Beer Stock tab. Proceed?')) return;
-  // First read current active breweryBeers from Supabase so we don't overwrite them
-  try {
-    const existing = await fetch(SB_URL + '/rest/v1/kegs?select=id,data&id=eq.__brewery_beers__', { headers: SB_HDR }).then(r=>r.json());
-    const current = existing[0]?.data?.breweryBeers || [];
-    // Remove any consumed entries already present, keep active ones
-    const activeOnly = current.filter(b=>!b.inactive);
-    // Add all known consumed batches
-    const consumed = [
-      {beer:'BB', batch:'50', litres:0, brewDate:'', inactive:true},
-      {beer:'BB', batch:'51', litres:0, brewDate:'', inactive:true},
-      {beer:'GR', batch:'12', litres:0, brewDate:'', inactive:true},
-      {beer:'GR', batch:'13', litres:0, brewDate:'', inactive:true},
-      {beer:'MP', batch:'39', litres:0, brewDate:'', inactive:true},
-      {beer:'MP', batch:'40', litres:0, brewDate:'', inactive:true},
-      {beer:'MP', batch:'41', litres:0, brewDate:'', inactive:true},
-      {beer:'DC', batch:'23', litres:0, brewDate:'', inactive:true},
-      {beer:'DC', batch:'24', litres:0, brewDate:'', inactive:true},
-      {beer:'OW', batch:'3',  litres:0, brewDate:'', inactive:true},
-    ];
-    // Also mark MP42, DC25, OW4 as consumed since they're exhausted
-    const exhausted = ['MP42','DC25','OW4'];
-    const finalActive = activeOnly.map(b => {
-      if (exhausted.includes(b.beer+(b.batch||''))) return {...b, inactive:true};
-      return b;
-    });
-    const breweryBeers = [...finalActive, ...consumed];
-    const res = await fetch(SB_URL + '/rest/v1/kegs', {
-      method: 'POST',
-      headers: { ...SB_HDR, 'Prefer': 'resolution=merge-duplicates,return=minimal' },
-      body: JSON.stringify({ id: '__brewery_beers__', data: { breweryBeers }, updated_at: new Date().toISOString() })
-    });
-    if (res.ok) {
-      toast('✓ Consumed batch history restored');
-    } else {
-      const err = await res.text();
-      toast('Error: ' + err, false);
-    }
-  } catch(e) {
-    toast('Failed: ' + e.message, false);
-  }
 }
 
 function openConsumedBatches() {
@@ -4190,6 +4236,9 @@ function saveBeer() {
     fixRMIds();
     fixPOIds();
     fixBrewLogIds();
+    fixTankIds();
+    fixScheduleIds();
+    fixStockTakeIds();
     saveState();
     try { renderNav(); renderContent(); } catch(e) {}
     startAutoSync();
