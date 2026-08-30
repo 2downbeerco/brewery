@@ -2608,6 +2608,7 @@ function renderRMInventory() {
         <div class="modal-title" id="batch-modal-title">Add Batch</div>
         <input type="hidden" id="bm-rm-id">
         <input type="hidden" id="bm-batch-idx">
+        <input type="hidden" id="bm-orig-batchno">
         <div id="bm-rm-info" style="font-size:14px;color:var(--muted);margin-bottom:16px;"></div>
         <div class="form-row form-row-2">
           <div class="form-group"><label class="lbl">Batch No.</label><input class="inp" id="bm-batchno" placeholder="e.g. B2025-06"></div>
@@ -2649,6 +2650,7 @@ function renderRMInventory() {
         <div class="modal-title">Transfer to Brewery</div>
         <input type="hidden" id="bt-rm-id">
         <input type="hidden" id="bt-batch-idx">
+        <input type="hidden" id="bt-orig-batchno">
         <div id="bt-info" style="font-size:14px;color:var(--muted);margin-bottom:16px;"></div>
         <div class="form-group"><label class="lbl">Quantity to transfer (kg)</label>
           <input class="inp" id="bt-qty" type="number" step="0.1" placeholder="0">
@@ -2966,6 +2968,7 @@ function openAddBatch(rmId){
   document.getElementById('batch-modal-title').textContent='Add Batch — '+r.name;
   document.getElementById('bm-rm-id').value=rmId;
   document.getElementById('bm-batch-idx').value='';
+  document.getElementById('bm-orig-batchno').value='';
   document.getElementById('bm-rm-info').textContent='';
   document.getElementById('bm-batchno').value='';
   document.getElementById('bm-delivery').value=new Date().toISOString().slice(0,10);
@@ -2989,7 +2992,8 @@ function openEditBatch(rmId, bi){
   const b=r.batches[bi];if(!b)return;
   document.getElementById('batch-modal-title').textContent='Edit Batch — '+r.name;
   document.getElementById('bm-rm-id').value=rmId;
-  document.getElementById('bm-batch-idx').value=bi;
+  document.getElementById('bm-batch-idx').value=bi; // kept for backward compat, unused for commit
+  document.getElementById('bm-orig-batchno').value=b.batchNo||'';
   document.getElementById('bm-rm-info').textContent='';
   document.getElementById('bm-batchno').value=b.batchNo||'';
   document.getElementById('bm-delivery').value=b.deliveryDate||'';
@@ -3015,8 +3019,8 @@ function openEditBatch(rmId, bi){
 function closeBatchModal(){document.getElementById('batch-modal').style.display='none';}
 function saveBatch(){
   const rmId=+document.getElementById('bm-rm-id').value;
-  const biStr=document.getElementById('bm-batch-idx').value;
-  const bi=biStr!==''?+biStr:-1;
+  const origBatchNo=document.getElementById('bm-orig-batchno')?.value || '';
+  const isEdit = origBatchNo !== '';
   const i=state.rawMaterials.findIndex(x=>x.id===rmId);if(i<0)return;
   const r=state.rawMaterials[i];
   if(!r.batches) r.batches=[];
@@ -3040,8 +3044,16 @@ function saveBatch(){
       cost:+document.getElementById('bm-std-cost').value||0,
     })
   };
-  if(bi>=0) r.batches[bi]={...r.batches[bi],...bObj};
-  else r.batches.push(bObj);
+  if(isEdit){
+    // Resolve the target batch fresh by its original batch no. — protects
+    // against a background sync reordering/changing r.batches since the
+    // modal was opened (e.g. another device added a PO batch meanwhile)
+    const bi = r.batches.findIndex(b=>b.batchNo===origBatchNo);
+    if (bi<0) { toast('That batch no longer exists — it may have changed elsewhere. Please refresh and try again.', false); closeBatchModal(); renderContent(); return; }
+    r.batches[bi]={...r.batches[bi],...bObj};
+  } else {
+    r.batches.push(bObj);
+  }
   // Update stock total
   rmStatus(r);
   saveState();closeBatchModal();renderContent();toast('Batch saved');
@@ -3049,8 +3061,13 @@ function saveBatch(){
 function deleteBatch(rmId,bi){
   if(!confirm('Delete this batch?'))return;
   const i=state.rawMaterials.findIndex(x=>x.id===rmId);if(i<0)return;
-  state.rawMaterials[i].batches.splice(bi,1);
-  rmStatus(state.rawMaterials[i]);
+  const r = state.rawMaterials[i];
+  const batchAtClick = r.batches[bi];
+  if (!batchAtClick) { toast('That batch no longer exists.', false); renderContent(); return; }
+  const freshBi = r.batches.findIndex(b=>b.batchNo===batchAtClick.batchNo);
+  if (freshBi<0) { toast('That batch no longer exists.', false); renderContent(); return; }
+  r.batches.splice(freshBi,1);
+  rmStatus(r);
   saveState();renderContent();toast('Batch deleted');
 }
 
@@ -3059,7 +3076,8 @@ function openBatchTransfer(rmId,bi){
   const r=state.rawMaterials.find(x=>x.id===rmId);if(!r)return;
   const b=r.batches[bi];if(!b)return;
   document.getElementById('bt-rm-id').value=rmId;
-  document.getElementById('bt-batch-idx').value=bi;
+  document.getElementById('bt-batch-idx').value=bi; // kept for backward compat, unused for commit
+  document.getElementById('bt-orig-batchno').value=b.batchNo||'';
   document.getElementById('bt-info').innerHTML=`<strong>${r.name}</strong> — Batch ${b.batchNo}<br>
     Warehouse: <strong>${b.warehouseQty||0} kg</strong> · Brewery: <strong>${b.breweryQty||0} kg</strong>`;
   document.getElementById('bt-qty').value='';
@@ -3067,10 +3085,13 @@ function openBatchTransfer(rmId,bi){
 }
 function applyBatchTransfer(){
   const rmId=+document.getElementById('bt-rm-id').value;
-  const bi=+document.getElementById('bt-batch-idx').value;
+  const origBatchNo=document.getElementById('bt-orig-batchno').value;
   const qty=+document.getElementById('bt-qty').value;
   const i=state.rawMaterials.findIndex(x=>x.id===rmId);if(i<0)return;
-  const b=state.rawMaterials[i].batches[bi];if(!b)return;
+  const r = state.rawMaterials[i];
+  const bi = r.batches.findIndex(b=>b.batchNo===origBatchNo);
+  if (bi<0) { toast('That batch no longer exists — it may have changed elsewhere. Please refresh and try again.', false); document.getElementById('batch-transfer-modal').style.display='none'; renderContent(); return; }
+  const b=r.batches[bi];
   if(!qty||qty<=0){toast('Enter a valid quantity',false);return;}
   if(qty>(b.warehouseQty||0)){toast(`Only ${b.warehouseQty||0} kg in warehouse for this batch`,false);return;}
   b.warehouseQty=Math.round(((b.warehouseQty||0)-qty)*1000)/1000;
@@ -3712,6 +3733,8 @@ function renderBeerInv() {
         <div class="modal-title" id="beer-inv-modal-title">Add Cold Room Batch</div>
         <input type="hidden" id="bim-inv-idx">
         <input type="hidden" id="bim-batch-idx">
+        <input type="hidden" id="bim-orig-beer">
+        <input type="hidden" id="bim-orig-batchno">
         <div class="form-row form-row-2">
           <div class="form-group"><label class="lbl">Beer</label>
             <select class="inp" id="bim-beer">
@@ -3780,6 +3803,8 @@ function openAddBeerInvBatch() {
   document.getElementById('beer-inv-modal-title').textContent = 'Add Cold Room Batch';
   document.getElementById('bim-inv-idx').value = '';
   document.getElementById('bim-batch-idx').value = '';
+  document.getElementById('bim-orig-beer').value = '';
+  document.getElementById('bim-orig-batchno').value = '';
   document.getElementById('bim-beer').value = getBeers(true)[0]?.code||'';
   document.getElementById('bim-batchno').value = '';
   document.getElementById('bim-litres').value = '';
@@ -3787,10 +3812,14 @@ function openAddBeerInvBatch() {
 }
 
 function openEditBeerInvBatch(ii, bi) {
+  // Resolve by array position at click time (fine here — this is a direct
+  // user click, not a value committed later after a possible background sync)
   const inv = state.beerInventory[ii];
   const b = inv.batches[bi];
   document.getElementById('beer-inv-modal-title').textContent = 'Edit Batch';
-  document.getElementById('bim-inv-idx').value = ii;
+  document.getElementById('bim-orig-beer').value = inv.beer;
+  document.getElementById('bim-orig-batchno').value = b.batchNo||'';
+  document.getElementById('bim-inv-idx').value = ii; // kept for backward compat, unused for commit
   document.getElementById('bim-batch-idx').value = bi;
   document.getElementById('bim-beer').value = inv.beer;
   document.getElementById('bim-batchno').value = b.batchNo||'';
@@ -3804,14 +3833,21 @@ function saveBeerInvBatch() {
   const beer = document.getElementById('bim-beer').value;
   const batchNo = document.getElementById('bim-batchno').value.trim();
   const litres = +document.getElementById('bim-litres').value||0;
-  const ii = document.getElementById('bim-inv-idx').value;
-  const bi = document.getElementById('bim-batch-idx').value;
+  const origBeer = document.getElementById('bim-orig-beer')?.value || '';
+  const origBatchNo = document.getElementById('bim-orig-batchno')?.value || '';
+  const isEdit = !!origBeer;
 
   if (!batchNo) { toast('Batch no. required', false); return; }
 
-  if (ii !== '') {
-    // Edit existing
-    state.beerInventory[+ii].batches[+bi] = { batchNo, litres };
+  if (isEdit) {
+    // Look up the CURRENT position by stable key (beer + original batch no.)
+    // rather than trusting array indices captured when the modal was opened —
+    // a background sync could have reordered/changed the array since then.
+    const invIdx = state.beerInventory.findIndex(x=>x.beer===origBeer);
+    if (invIdx < 0) { toast('That batch no longer exists — it may have changed elsewhere. Please refresh and try again.', false); closeBeerInvModal(); return; }
+    const batchIdx = state.beerInventory[invIdx].batches.findIndex(b=>b.batchNo===origBatchNo);
+    if (batchIdx < 0) { toast('That batch no longer exists — it may have changed elsewhere. Please refresh and try again.', false); closeBeerInvModal(); return; }
+    state.beerInventory[invIdx].batches[batchIdx] = { batchNo, litres };
   } else {
     // Add new — find or create inv entry for this beer
     let invIdx = state.beerInventory.findIndex(x=>x.beer===beer);
@@ -3826,14 +3862,29 @@ function saveBeerInvBatch() {
 }
 
 function updateBeerInvField(ii, bi, field, val) {
-  state.beerInventory[ii].batches[bi][field] = val;
+  // Resolve the target by stable key (beer + batchNo) rather than the raw
+  // indices — protects against a background sync reordering the array
+  // between when this input was rendered and when its onchange commits.
+  const invAtRender = state.beerInventory[ii];
+  const batchAtRender = invAtRender && invAtRender.batches[bi];
+  if (!batchAtRender) { toast('That batch no longer exists — refresh and try again.', false); renderContent(); return; }
+  const invIdx = state.beerInventory.findIndex(x=>x.beer===invAtRender.beer);
+  const batchIdx = invIdx>=0 ? state.beerInventory[invIdx].batches.findIndex(b=>b.batchNo===batchAtRender.batchNo) : -1;
+  if (invIdx<0 || batchIdx<0) { toast('That batch no longer exists — refresh and try again.', false); renderContent(); return; }
+  state.beerInventory[invIdx].batches[batchIdx][field] = val;
   saveState(); renderContent();
 }
 
 function deleteBeerInvBatch(ii, bi) {
   if (!confirm('Remove this batch from cold room?')) return;
-  state.beerInventory[ii].batches.splice(bi, 1);
-  if (!state.beerInventory[ii].batches.length) state.beerInventory.splice(ii, 1);
+  const invAtRender = state.beerInventory[ii];
+  const batchAtRender = invAtRender && invAtRender.batches[bi];
+  if (!batchAtRender) { toast('That batch no longer exists.', false); renderContent(); return; }
+  const invIdx = state.beerInventory.findIndex(x=>x.beer===invAtRender.beer);
+  const batchIdx = invIdx>=0 ? state.beerInventory[invIdx].batches.findIndex(b=>b.batchNo===batchAtRender.batchNo) : -1;
+  if (invIdx<0 || batchIdx<0) { toast('That batch no longer exists.', false); renderContent(); return; }
+  state.beerInventory[invIdx].batches.splice(batchIdx, 1);
+  if (!state.beerInventory[invIdx].batches.length) state.beerInventory.splice(invIdx, 1);
   saveState(); renderContent(); toast('Removed');
 }
 
