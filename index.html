@@ -266,6 +266,17 @@ function isModalOpen() {
     .some(el => el.style.display !== 'none' && el.style.display !== '');
 }
 
+// Detects if the user is actively typing/selecting in any input, textarea,
+// or select — whether inside a modal or directly in the page body (e.g. Draft
+// brew log fields, ingredient quantities, cold room litres, PO line items).
+// A background sync re-render would otherwise wipe unsaved keystrokes.
+function isEditingField() {
+  const el = document.activeElement;
+  if (!el) return false;
+  const tag = el.tagName;
+  return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
+}
+
 // ── Serialized queue for __brewery_beers__ writes ──────────────────────────
 // Multiple functions (saveState's push, transfer corrections, batch removals)
 // all read-modify-write the same Supabase row. Running them concurrently
@@ -327,7 +338,7 @@ function startAutoSync() {
           changed = true;
         }
       });
-      if (changed && !isModalOpen()) {
+      if (changed && !isModalOpen() && !isEditingField()) {
         setSyncStatus('Updated ↓', '#16A34A');
         setTimeout(() => setSyncStatus('', ''), 2000);
         try { renderNav(); renderContent(); } catch(e) {}
@@ -1672,6 +1683,18 @@ function completeBrew(id) {
   const log = state.brewLogs.find(b=>b.id===id);
   if (!log) return;
 
+  // Determine which tank this brew is going into — prefer the tank selected
+  // during "Transfer to Fermenter" execution, fall back to the Draft selection
+  const ex = log.execution || {};
+  const targetTankId = ex.fvTank || log.tank || null;
+  const targetTank = targetTankId ? state.tanks.find(t=>t.id===targetTankId) : null;
+
+  if (!targetTankId) {
+    if (!confirm('No fermenter tank was selected for this brew (in Draft or the Transfer to Fermenter step). Complete anyway without assigning a tank?')) return;
+  } else if (!targetTank) {
+    if (!confirm('The selected tank could not be found (it may have been deleted). Complete anyway without assigning a tank?')) return;
+  }
+
   // Build deduction summary — check against actual batch-level brewery stock, not derived .stock
   const allIngs = [...log.grains,...log.hops,...log.yeast,...log.other].filter(i=>i.rmId&&i.qty>0);
   const issues = [];
@@ -1682,7 +1705,7 @@ function completeBrew(id) {
     if (total < ing.qty) issues.push(`${rm.name}: need ${ing.qty} ${ing.unit}, only ${total} ${rm.unit}`);
   });
 
-  let msg = `Mark "${beerName(log.beer)}" brew as Complete and deduct ${allIngs.length} ingredient(s) from stock?`;
+  let msg = `Mark "${beerName(log.beer)}" brew as Complete${targetTank?' and transfer to '+targetTank.name:''} and deduct ${allIngs.length} ingredient(s) from stock?`;
   if (issues.length) msg += `\n\n⚠️ Insufficient stock for:\n${issues.join('\n')}\n\nDeduct anyway?`;
 
   if (!confirm(msg)) return;
@@ -1698,11 +1721,27 @@ function completeBrew(id) {
     }
   });
 
+  // Assign the beer/batch/volume into the target tank and move it to Fermenting
+  if (targetTank) {
+    const ti = state.tanks.findIndex(t=>t.id===targetTank.id);
+    const vol = log.yieldEst || log.targetVol || 0;
+    state.tanks[ti] = {
+      ...state.tanks[ti],
+      beer: log.beer,
+      batchNo: log.batchNo || null,
+      vol: vol,
+      batchVol: vol,
+      stage: 'Fermenting',
+      since: log.date || new Date().toISOString().slice(0,10),
+      temp: state.tanks[ti].temp,
+    };
+  }
+
   const li = state.brewLogs.findIndex(b=>b.id===id);
   state.brewLogs[li].status = 'Completed';
   state.brewLogs[li].inventoryDeducted = true;
   saveState(); renderNav(); renderContent();
-  toast(`Brew completed. ${allIngs.length} item(s) deducted from stock.`);
+  toast(`Brew completed. ${allIngs.length} item(s) deducted${targetTank?', assigned to '+targetTank.name:''}.`);
 }
 
 function completeBrewNoDeduct(id) {
