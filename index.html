@@ -135,6 +135,7 @@
   .brew-list-item.active-brew { border-color: var(--accent); background: var(--accent-bg); }
 
   .brew-sheet { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  .ba-row { display: grid; grid-template-columns: 1fr 70px 60px 60px 24px; gap: 6px; align-items: center; }
   .brew-section { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 20px; }
   .brew-section-title { font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 14px; display: flex; align-items: center; justify-content: space-between; }
 
@@ -176,6 +177,17 @@
     .stat-num { font-size: 26px; }
     .form-row-2, .form-row-3 { grid-template-columns: 1fr; }
     .brew-sheet { grid-template-columns: 1fr; }
+    /* Brew Log detail view (Recipe / In Progress / Completed) uses many
+       ad-hoc inline grid layouts with fixed pixel columns for ingredient
+       rows, mash steps, and header fields — these don't reflow on narrow
+       screens, leaving inputs too small or overflowing. Force every grid
+       inside the brew detail view to stack to a single column on mobile. */
+    .brew-detail [style*="grid-template-columns"], .brew-detail .ba-row {
+      grid-template-columns: 1fr !important;
+      row-gap: 8px;
+    }
+    /* Delete/remove buttons in ingredient rows shouldn't take a full row alone */
+    .brew-detail .del-btn { width: fit-content; align-self: flex-end; }
   }
   @media (min-width: 701px) {
     #menu-btn { display: none !important; }
@@ -990,7 +1002,7 @@ function renderBrewDetail(id) {
   // ── Boil additions (adjuncts added during boil) ───────────────────────────
   function ingRowsBoilAdd(section, items) {
     const rmList = state.rawMaterials.filter(r=>['Adjuncts','Salts++','Other'].includes(r.category));
-    const rmOpts = rmList.map(r=>`<option value="${r.id}">${r.name}</option>`).join('');
+    const rmOpts = rmList.map(r=>`<option value="${r.id}" data-unit="${r.unit}">${r.name}</option>`).join('');
     if (!canEdit && items.length===0) return '<div style="color:var(--muted);font-size:13px;">None specified</div>';
     return items.map((ing,idx)=>{
       if (!canEdit) {
@@ -1000,12 +1012,14 @@ function renderBrewDetail(id) {
         </div>`;
       }
       return `<div style="background:var(--bg);border-radius:8px;padding:10px;margin-bottom:8px;">
-        <div style="display:grid;grid-template-columns:1fr 70px 60px 60px 24px;gap:6px;align-items:center;">
-          <input class="inp inp-sm" value="${ing.name||''}" placeholder="e.g. Basil, Coriander"
-            onchange="updateBoilAdd(${id},${idx},'name',this.value)">
+        <div class="ba-row">
+          <select class="inp inp-sm" onchange="updateIng('${section}',${idx},'rmId',this.value);updateIngUnit('${section}',${idx},this)">
+            <option value="">— select from Raw Materials —</option>
+            ${rmOpts.replace(`value="${ing.rmId}"`,`value="${ing.rmId}" selected`)}
+          </select>
           <input class="inp inp-sm" type="number" step="0.01" value="${ing.qty||''}" placeholder="qty"
             onchange="updateBoilAdd(${id},${idx},'qty',+this.value)">
-          <input class="inp inp-sm" value="${ing.unit||'g'}" placeholder="g/kg"
+          <input class="inp inp-sm" value="${ing.unit||'g'}" placeholder="g/kg" readonly
             onchange="updateBoilAdd(${id},${idx},'unit',this.value)">
           <input class="inp inp-sm" type="number" value="${ing.tMin!=null?ing.tMin:''}" placeholder="t="
             title="t=60 = start of boil, t=0 = flameout"
@@ -1305,6 +1319,7 @@ function renderBrewDetail(id) {
   }
 
   return `
+    <div class="brew-detail">
     <div style="margin-bottom:20px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
       <button class="btn btn-ghost btn-sm" onclick="closeBrewLog()">← All Brews</button>
       <div style="display:flex;gap:8px;flex-wrap:wrap;">
@@ -1503,6 +1518,7 @@ function renderBrewDetail(id) {
     <div style="margin-top:20px;background:#DCFCE7;border:1px solid #86EFAC;border-radius:10px;padding:16px 20px;font-size:14px;color:#15803D;">
       ✅ <strong>Brew completed.</strong>${log.inventoryDeducted?' Stock was deducted on completion.':' Stock was not automatically deducted.'}
     </div>`:''}
+    </div>
   `;
 }
 
