@@ -1709,7 +1709,20 @@ function renderBrewDetail(id) {
             const fg = log.fgActual ? parseFloat(log.fgActual) : null;
             if (og==null || fg==null || isNaN(fg)) return '';
             return ((og-fg)*131.25).toFixed(2);
-          })()}" disabled placeholder="from Actual OG / FG" style="color:var(--muted);background:var(--bg);"></div>`:''}
+          })()}" disabled placeholder="from Actual OG / FG" style="color:var(--muted);background:var(--bg);"></div>
+        <div class="form-group" style="grid-column:1/-1;">
+          <div style="background:var(--bg);border-radius:8px;padding:10px 12px;margin-top:4px;">
+            <div style="font-size:13px;font-weight:700;margin-bottom:8px;color:var(--text);">Filtration</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;max-width:320px;">
+              <div><label class="lbl" style="font-size:10px;">Filter Sheets (qty)</label>
+                <input class="inp inp-sm" type="number" step="1" value="${log.filterSheetsQty||''}" ${!canEdit?'disabled':''}
+                  onchange="updateFiltrationField(${id},'filterSheetsQty',+this.value,'Filter Sheets','_filterSheetsDeducted')"></div>
+              <div><label class="lbl" style="font-size:10px;">Spindasol (qty)</label>
+                <input class="inp inp-sm" type="number" step="0.01" value="${log.spindasolQty||''}" ${!canEdit?'disabled':''}
+                  onchange="updateFiltrationField(${id},'spindasolQty',+this.value,'Spindasol','_spindasolDeducted')"></div>
+            </div>
+          </div>
+        </div>`:''}
       </div>
     </div>
 
@@ -2029,6 +2042,48 @@ function deductFromBatches(rm, qtyNeeded) {
     deducted += take;
   }
   return Math.round(deducted*1000)/1000;
+}
+
+// Adjusts a raw material's stock by a signed delta — positive deducts (FIFO
+// across batches, matching brewing ingredient deduction), negative adds back
+// to the most recent batch (matching the Stock Take / Adjust convention).
+// Used for post-fermentation additions like Filter Sheets / Spindasol where
+// the entered quantity can be corrected later without double-deducting.
+function adjustRMByDelta(rmName, delta) {
+  if (!delta) return;
+  const rm = state.rawMaterials.find(r=>r.name.toLowerCase()===rmName.toLowerCase());
+  if (!rm) { toast(`Raw material "${rmName}" not found — quantity recorded but stock not adjusted`, false); return; }
+  if (delta > 0) {
+    deductFromBatches(rm, delta);
+  } else {
+    const addBack = -delta;
+    if (!rm.batches || !rm.batches.length) {
+      rm.batches = [{ batchNo: 'ADJ-'+Date.now(), deliveryDate: new Date().toISOString().slice(0,10), cost: rm.lastCost||0, qty: addBack }];
+    } else {
+      const sorted = [...rm.batches].sort((a,b)=>(b.deliveryDate||'').localeCompare(a.deliveryDate||''));
+      const target = sorted[0];
+      if (rm.category==='Malt') target.breweryQty = Math.round(((target.breweryQty||0)+addBack)*1000)/1000;
+      else target.qty = Math.round(((target.qty||0)+addBack)*1000)/1000;
+    }
+  }
+  rmStatus(rm);
+}
+
+// Records a filtration field (Filter Sheets / Spindasol qty) on the brew log
+// and deducts only the DIFFERENCE from the raw material stock — so editing
+// the value later (e.g. correcting a typo) never double-deducts.
+function updateFiltrationField(id, field, val, rmName, deductedField) {
+  const i = state.brewLogs.findIndex(b=>b.id===id);
+  if (i<0) return;
+  const log = state.brewLogs[i];
+  const prevDeducted = log[deductedField] || 0;
+  const delta = val - prevDeducted;
+  if (delta !== 0) {
+    adjustRMByDelta(rmName, delta);
+    log[deductedField] = val;
+  }
+  log[field] = val;
+  saveState(); renderContent();
 }
 
 function startBrew(id) {
