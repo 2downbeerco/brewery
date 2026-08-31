@@ -55,7 +55,10 @@
   .inp:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(212,130,26,0.12); }
   .lbl { font-size: 12px; font-weight: 600; color: var(--muted); margin-bottom: 6px; display: block; }
   .inp-sm { padding: 7px 10px; font-size: 13px; }
-  .time-field { max-width: 150px; }
+  .compact-field { max-width: 90px; }
+  .compact-field .inp { text-align: center; }
+  .rs-sparge-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .compact-row-3 { display: grid; grid-template-columns: 1fr 1fr 24px; gap: 6px; align-items: center; margin-bottom: 6px; }
 
   .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
   .grid3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 18px; }
@@ -191,6 +194,8 @@
        get more usable width, and tighten spacing between stacked fields */
     .ip-step-card { padding: 12px !important; }
     .ip-step-card .lbl { font-size: 10px !important; }
+    .rs-sparge-grid { gap: 6px !important; }
+    .compact-row-3 { gap: 3px !important; }
     /* Delete/remove buttons in ingredient rows shouldn't take a full row alone */
     .brew-detail .del-btn { width: fit-content; align-self: flex-end; }
   }
@@ -1242,12 +1247,12 @@ function renderBrewDetail(id) {
     }
     function tf(key, label, placeholder) {
       const isTime = placeholder === 'HH:MM';
-      return `<div${isTime?' class="time-field"':''}><label class="lbl" style="font-size:10px;">${label}</label>
+      return `<div${isTime?' class="compact-field"':''}><label class="lbl" style="font-size:10px;">${label}</label>
         <input class="inp inp-sm" value="${ex[key]||''}" placeholder="${placeholder||''}"
           onchange="updateExField(${id},'${key}',this.value)"></div>`;
     }
     function tn(key, label, placeholder, step) {
-      return `<div><label class="lbl" style="font-size:10px;">${label}</label>
+      return `<div class="compact-field"><label class="lbl" style="font-size:10px;">${label}</label>
         <input class="inp inp-sm" type="number" step="${step||'0.01'}" value="${ex[key]||''}" placeholder="${placeholder||''}"
           onchange="updateExField(${id},'${key}',+this.value)"></div>`;
     }
@@ -1317,12 +1322,12 @@ function renderBrewDetail(id) {
         ${tn('transferKettleStartGravity','°Plato at Start','e.g. 12.5','0.1')}
       </div>
       <!-- Running Samples & Sparging — side by side since they overlap in time -->
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+      <div class="rs-sparge-grid">
         <div>
           <div style="font-size:12px;font-weight:700;margin-bottom:6px;">Running Samples (every 15 min)</div>
           <div id="transfer-samples-${id}">
             ${transferSamples.map((s,i)=>`
-              <div style="display:grid;grid-template-columns:1fr 1fr 24px;gap:6px;align-items:center;margin-bottom:6px;">
+              <div class="compact-row-3">
                 ${tf('transferSample_'+i+'_time','Time','HH:MM')}
                 ${tn('transferSample_'+i+'_gravity','°Plato','e.g. 12.5','0.1')}
                 <button class="del-btn" onclick="removeExSample(${id},'transferSamples',${i})">✕</button>
@@ -1333,7 +1338,7 @@ function renderBrewDetail(id) {
         <div style="background:var(--bg);border-radius:8px;padding:10px;">
           <div style="font-size:12px;font-weight:700;margin-bottom:6px;">Sparging</div>
           ${spargeSamples.map((s,i)=>`
-            <div style="display:grid;grid-template-columns:1fr 1fr 24px;gap:6px;align-items:center;margin-bottom:6px;">
+            <div class="compact-row-3">
               ${tf('sparge_'+i+'_time','Time','HH:MM')}
               ${tn('sparge_'+i+'_vol','Liquor (L)','','0.1')}
               <button class="del-btn" onclick="removeExSample(${id},'spargeSamples',${i})">✕</button>
