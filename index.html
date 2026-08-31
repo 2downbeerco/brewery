@@ -1691,6 +1691,7 @@ function renderBrewDetail(id) {
             value="${log.targetABV!=null?log.targetABV:''}"
             onchange="updateBrewField('targetABV',+this.value)">
         </div>
+        ${viewingCompleted?`
         <div class="form-group"><label class="lbl">Actual OG</label>
           <input class="inp" value="${(()=>{
             const plato = log.execution?.ogActual;
@@ -1708,7 +1709,7 @@ function renderBrewDetail(id) {
             const fg = log.fgActual ? parseFloat(log.fgActual) : null;
             if (og==null || fg==null || isNaN(fg)) return '';
             return ((og-fg)*131.25).toFixed(2);
-          })()}" disabled placeholder="from Actual OG / FG" style="color:var(--muted);background:var(--bg);"></div>
+          })()}" disabled placeholder="from Actual OG / FG" style="color:var(--muted);background:var(--bg);"></div>`:''}
       </div>
     </div>
 
