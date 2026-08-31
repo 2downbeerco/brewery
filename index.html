@@ -831,6 +831,117 @@ function newBrewLog() {
   renderContent();
 }
 
+function printRecipe(id) {
+  const log = state.brewLogs.find(b=>b.id===id);
+  if (!log) return;
+
+  const ingRow = (ing, showT) => `<tr>
+    <td>${ing.name||'—'}</td>
+    <td style="text-align:right;">${ing.qty||0} ${ing.unit||''}</td>
+    <td>${ing.batchNo||'—'}</td>
+    ${showT?`<td style="text-align:right;">${ing.tMin!=null?ing.tMin+' min':'—'}</td>`:''}
+  </tr>`;
+
+  const ingTable = (title, items, showT) => {
+    if (!items || !items.length) return '';
+    return `<div class="section">
+      <div class="section-title">${title}</div>
+      <table>
+        <thead><tr><th>Item</th><th style="text-align:right;">Qty</th><th>Batch</th>${showT?'<th style="text-align:right;">Time (t=)</th>':''}</tr></thead>
+        <tbody>${items.map(i=>ingRow(i, showT)).join('')}</tbody>
+      </table>
+    </div>`;
+  };
+
+  const mashSteps = [
+    ['Cereal Mash', log.mash?.cerealMash],
+    ['β-Glucan Rest', log.mash?.bGlucanRest],
+    ['Protein Rest', log.mash?.proteinRest],
+    ['β-Amylase Rest', log.mash?.bAmylaseRest],
+    ['Saccharification Rest', log.mash?.sacchRest],
+    ['Mash Out', log.mash?.mashOut],
+  ].filter(([,s])=>s?.enabled);
+
+  const mashTable = mashSteps.length ? `<div class="section">
+    <div class="section-title">Mash Schedule</div>
+    <table>
+      <thead><tr><th>Step</th><th style="text-align:right;">Temp (°C)</th><th style="text-align:right;">Duration (min)</th></tr></thead>
+      <tbody>${mashSteps.map(([label,s])=>`<tr><td>${label}</td><td style="text-align:right;">${s.temp||'—'}</td><td style="text-align:right;">${s.duration||'—'}</td></tr>`).join('')}</tbody>
+    </table>
+  </div>` : '';
+
+  const strikeInfo = `<div class="section">
+    <div class="section-title">Strike Water</div>
+    <table>
+      <tbody>
+        <tr><td>Stage 1</td><td style="text-align:right;">${log.strikeVol1?log.strikeVol1+' L':'—'} @ ${log.strikeTemp1?log.strikeTemp1+'°C':'—'}</td></tr>
+        ${log.mash?.cerealMash?.enabled?`<tr><td>Stage 2</td><td style="text-align:right;">${log.strikeVol2?log.strikeVol2+' L':'—'} @ ${log.strikeTemp2?log.strikeTemp2+'°C':'—'}</td></tr>`:''}
+      </tbody>
+    </table>
+  </div>`;
+
+  const yeastFormLabel = log.yeastForm==='dry'?'Dried':log.yeastForm==='slurry'?'Slurry':'Rehydrated';
+
+  const html = `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Recipe — ${beerName(log.beer)}${log.batchNo?' Batch '+log.batchNo:''}</title>
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, 'Segoe UI', Arial, sans-serif; color: #1a1a1a; padding: 32px; max-width: 800px; margin: 0 auto; }
+  h1 { font-size: 22px; margin-bottom: 4px; }
+  .subtitle { color: #666; font-size: 13px; margin-bottom: 20px; }
+  .header-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 24px; padding: 14px; background: #f7f7f7; border-radius: 8px; }
+  .header-grid div { font-size: 12px; }
+  .header-grid strong { display: block; font-size: 14px; margin-top: 2px; }
+  .section { margin-bottom: 22px; }
+  .section-title { font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: #333; margin-bottom: 8px; border-bottom: 2px solid #333; padding-bottom: 4px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; font-size: 11px; text-transform: uppercase; color: #888; padding: 5px 6px; border-bottom: 1px solid #ccc; }
+  td { padding: 6px; border-bottom: 1px solid #eee; }
+  .notes { font-size: 13px; white-space: pre-wrap; background: #f7f7f7; padding: 12px; border-radius: 8px; }
+  @media print {
+    body { padding: 0; }
+    @page { margin: 15mm; }
+  }
+</style>
+</head>
+<body>
+  <h1>${beerName(log.beer)}${log.batchNo?' — Batch '+log.batchNo:''}</h1>
+  <div class="subtitle">Recipe sheet · Generated ${new Date().toLocaleDateString('en-IN',{day:'numeric',month:'long',year:'numeric'})}</div>
+
+  <div class="header-grid">
+    <div>Brew Date<strong>${fmtDate(log.date)}</strong></div>
+    <div>Target Volume<strong>${log.targetVol||'—'} L</strong></div>
+    <div>Target OG / FG<strong>${log.ogTarget||'—'} / ${log.fgTarget||'—'}</strong></div>
+    <div>Target ABV<strong>${log.targetABV!=null?log.targetABV+'%':'—'}</strong></div>
+    <div>Brewer<strong>${log.brewer||'—'}</strong></div>
+    <div>Yeast Form<strong>${yeastFormLabel}</strong></div>
+    <div>Boil Time<strong>${log.boilTime||'—'} min</strong></div>
+    <div>Est. Yield<strong>${log.yieldEst||'—'} L</strong></div>
+  </div>
+
+  ${strikeInfo}
+  ${mashTable}
+  ${ingTable('Grains / Malt', log.grains, false)}
+  ${ingTable('Hops', log.hops, true)}
+  ${ingTable('Yeast', log.yeast, false)}
+  ${ingTable('Other Additions', log.other, false)}
+  ${ingTable('Boil Additions', log.boilAdd, true)}
+
+  ${log.notes?`<div class="section"><div class="section-title">Notes</div><div class="notes">${log.notes.replace(/</g,'&lt;')}</div></div>`:''}
+</body>
+</html>`;
+
+  const win = window.open('', '_blank');
+  if (!win) { toast('Please allow popups to print the recipe', false); return; }
+  win.document.write(html);
+  win.document.close();
+  win.onload = () => { win.focus(); win.print(); };
+}
+
+
 function openBrewLog(id) {
   window._openBrewId = id;
   window._brewViewTab = null;
@@ -1324,6 +1435,7 @@ function renderBrewDetail(id) {
       <button class="btn btn-ghost btn-sm" onclick="closeBrewLog()">← All Brews</button>
       <div style="display:flex;gap:8px;flex-wrap:wrap;">
         <button class="btn btn-ghost btn-sm" onclick="deleteBrewLog(${id})">🗑 Delete</button>
+        ${viewingDraft?`<button class="btn btn-ghost btn-sm" onclick="printRecipe(${id})">🖨️ Print / Save PDF</button>`:''}
         ${isCompleted?`<button class="btn btn-ghost btn-sm" onclick="window._brewEditMode=!window._brewEditMode;renderContent()">
           ${window._brewEditMode?'✕ Cancel Edit':'✏️ Edit'}</button>`:''}
         ${isCompleted&&window._brewEditMode?`<button class="btn btn-primary" onclick="saveBrewEdits(${id})">💾 Save Changes</button>`:''}
