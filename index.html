@@ -1693,6 +1693,17 @@ function renderBrewDetail(id) {
             const sg = 1 + (plato/(258.6-((plato/258.2)*227.1)));
             return sg.toFixed(3);
           })()}" disabled placeholder="from Yeast Pitch °Plato" style="color:var(--muted);background:var(--bg);"></div>
+        <div class="form-group"><label class="lbl">Actual FG</label>
+          <input class="inp" value="${log.fgActual||''}" placeholder="1.012" ${!canEdit?'disabled':''}
+            onchange="updateLog(${id},'fgActual',this.value)"></div>
+        <div class="form-group"><label class="lbl">Actual ABV (%)</label>
+          <input class="inp" value="${(()=>{
+            const plato = log.execution?.ogActual;
+            const og = (plato!=null && plato!=='') ? 1 + (plato/(258.6-((plato/258.2)*227.1))) : null;
+            const fg = log.fgActual ? parseFloat(log.fgActual) : null;
+            if (og==null || fg==null || isNaN(fg)) return '';
+            return ((og-fg)*131.25).toFixed(2);
+          })()}" disabled placeholder="from Actual OG / FG" style="color:var(--muted);background:var(--bg);"></div>
         <div class="form-group"><label class="lbl">Target ABV (%)</label>
           <input class="inp" id="bl-abv" type="number" step="0.1" placeholder="e.g. 5.2"
             value="${log.targetABV!=null?log.targetABV:''}"
