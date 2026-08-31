@@ -1246,8 +1246,8 @@ function renderBrewDetail(id) {
       </div>`;
     }
     function tf(key, label, placeholder) {
-      const isTime = placeholder === 'HH:MM';
-      return `<div${isTime?' class="compact-field"':''}><label class="lbl" style="font-size:10px;">${label}</label>
+      const isNote = /note/i.test(label);
+      return `<div${isNote?'':' class="compact-field"'}><label class="lbl" style="font-size:10px;">${label}</label>
         <input class="inp inp-sm" value="${ex[key]||''}" placeholder="${placeholder||''}"
           onchange="updateExField(${id},'${key}',this.value)"></div>`;
     }
