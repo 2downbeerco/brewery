@@ -186,6 +186,10 @@
       grid-template-columns: 1fr !important;
       row-gap: 8px;
     }
+    /* In Progress step cards: reduce padding on narrow screens so inputs
+       get more usable width, and tighten spacing between stacked fields */
+    .ip-step-card { padding: 12px !important; }
+    .ip-step-card .lbl { font-size: 10px !important; }
     /* Delete/remove buttons in ingredient rows shouldn't take a full row alone */
     .brew-detail .del-btn { width: fit-content; align-self: flex-end; }
   }
@@ -1215,7 +1219,7 @@ function renderBrewDetail(id) {
 
     // Helper: step card
     function stepCard(icon, title, done, content) {
-      return `<div style="border:1.5px solid ${done?'var(--green)':'var(--border)'};border-radius:10px;padding:16px;margin-bottom:14px;background:var(--surface);">
+      return `<div class="ip-step-card" style="border:1.5px solid ${done?'var(--green)':'var(--border)'};border-radius:10px;padding:16px;margin-bottom:14px;background:var(--surface);">
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:${content?'14px':'0'};">
           <input type="checkbox" ${done?'checked':''} onchange="toggleExStep(${id},'${title.replace(/[^a-zA-Z0-9]/g,'_')}',this.checked)"
             style="width:18px;height:18px;accent-color:var(--green);cursor:pointer;flex-shrink:0;">
