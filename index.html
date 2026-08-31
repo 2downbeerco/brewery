@@ -1715,15 +1715,14 @@ function selectIngBatch(section, idx, batchNo) {
   if (i<0) return;
   const ing = state.brewLogs[i][section][idx];
   ing.batchNo = batchNo;
-  // Look up batch details from PO history
-  state.purchaseOrders.forEach(po => {
-    po.items.forEach(item => {
-      if (item.rmId == ing.rmId && item.batchNo === batchNo) {
-        if (item.extractLdk != null) ing.extractLdk = item.extractLdk;
-        if (item.alphaAcid  != null) ing.alphaAcid  = item.alphaAcid;
-      }
-    });
-  });
+  // Look up batch details from the raw material's own batches array —
+  // the current source of truth, not purchase order history.
+  const rm = state.rawMaterials.find(r=>r.id==ing.rmId);
+  const b = rm?.batches?.find(x=>x.batchNo===batchNo);
+  if (b) {
+    if (b.extractLdk != null) ing.extractLdk = b.extractLdk;
+    if (b.alphaAcid  != null) ing.alphaAcid  = b.alphaAcid;
+  }
   saveState(); renderContent();
 }
 
@@ -1755,24 +1754,20 @@ function updateIng(section, idx, field, val) {
     if (rm) {
       state.brewLogs[i][section][idx].name = rm.name;
       state.brewLogs[i][section][idx].unit = rm.unit;
-      // Auto-select first available batch from PO history
-      const batches = [];
-      state.purchaseOrders.forEach(po => {
-        po.items.forEach(item => {
-          if (item.rmId == val && item.batchNo && !batches.find(b=>b.batchNo===item.batchNo)) {
-            batches.push(item);
-          }
-        });
-      });
-      if (batches.length > 0) {
-        state.brewLogs[i][section][idx].batchNo   = batches[0].batchNo;
-        if (batches[0].extractLdk != null) state.brewLogs[i][section][idx].extractLdk = batches[0].extractLdk;
-        if (batches[0].alphaAcid  != null) state.brewLogs[i][section][idx].alphaAcid  = batches[0].alphaAcid;
+      // Auto-select the most recent batch directly from the raw material's
+      // own batches array — this is the current source of truth (matches
+      // getBatches()), not purchase order history, since batches can also
+      // come from manual entry or Transfer to Cold Room.
+      const batches = rm.batches || [];
+      const picked = batches.length ? [...batches].sort((a,b)=>(b.deliveryDate||'').localeCompare(a.deliveryDate||''))[0] : null;
+      if (picked) {
+        state.brewLogs[i][section][idx].batchNo    = picked.batchNo;
+        if (picked.extractLdk != null) state.brewLogs[i][section][idx].extractLdk = picked.extractLdk;
+        if (picked.alphaAcid  != null) state.brewLogs[i][section][idx].alphaAcid  = picked.alphaAcid;
       } else {
-        // fall back to lastBatchNo on RM record
-        state.brewLogs[i][section][idx].batchNo   = rm.lastBatchNo || '';
-        state.brewLogs[i][section][idx].extractLdk = rm.extractLdk  || null;
-        state.brewLogs[i][section][idx].alphaAcid  = rm.alphaAcid   || null;
+        state.brewLogs[i][section][idx].batchNo    = '';
+        state.brewLogs[i][section][idx].extractLdk = null;
+        state.brewLogs[i][section][idx].alphaAcid  = null;
       }
     }
   }
