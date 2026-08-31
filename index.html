@@ -293,6 +293,19 @@ function isEditingField() {
   return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
 }
 
+// Tracks whether a click/tap gesture is currently in progress. Clicking a
+// button first blurs whatever field was focused (e.g. after typing into a
+// sample's Time field) — that blur makes isEditingField() momentarily
+// return false. If a background sync lands in that exact split-second gap,
+// it replaces the whole tab's DOM mid-click, silently swallowing the click
+// (the button the browser was about to dispatch to no longer exists). This
+// flag closes that gap by also blocking sync-triggered renders for the
+// duration of the pointer gesture.
+window._pointerActive = false;
+document.addEventListener('pointerdown', () => { window._pointerActive = true; }, true);
+document.addEventListener('pointerup',   () => { setTimeout(() => { window._pointerActive = false; }, 50); }, true);
+document.addEventListener('pointercancel', () => { window._pointerActive = false; }, true);
+
 // ── Serialized queue for __brewery_beers__ writes ──────────────────────────
 // Multiple functions (saveState's push, transfer corrections, batch removals)
 // all read-modify-write the same Supabase row. Running them concurrently
@@ -354,7 +367,7 @@ function startAutoSync() {
           changed = true;
         }
       });
-      if (changed && !isModalOpen() && !isEditingField()) {
+      if (changed && !isModalOpen() && !isEditingField() && !window._pointerActive) {
         setSyncStatus('Updated ↓', '#16A34A');
         setTimeout(() => setSyncStatus('', ''), 2000);
         try { renderNav(); renderContent(); } catch(e) {}
@@ -1219,12 +1232,9 @@ function renderBrewDetail(id) {
 
     // Helper: step card
     function stepCard(icon, title, done, content) {
-      return `<div class="ip-step-card" style="border:1.5px solid ${done?'var(--green)':'var(--border)'};border-radius:10px;padding:16px;margin-bottom:14px;background:var(--surface);">
+      return `<div class="ip-step-card" style="border:1.5px solid var(--border);border-radius:10px;padding:16px;margin-bottom:14px;background:var(--surface);">
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:${content?'14px':'0'};">
-          <input type="checkbox" ${done?'checked':''} onchange="toggleExStep(${id},'${title.replace(/[^a-zA-Z0-9]/g,'_')}',this.checked)"
-            style="width:18px;height:18px;accent-color:var(--green);cursor:pointer;flex-shrink:0;">
-          <span style="font-size:14px;font-weight:700;${done?'color:var(--green)':''}">${icon} ${title}</span>
-          ${done?'<span style="margin-left:auto;font-size:18px;">✅</span>':''}
+          <span style="font-size:14px;font-weight:700;">${icon} ${title}</span>
         </div>
         ${content||''}
       </div>`;
