@@ -1266,11 +1266,17 @@ function renderBrewDetail(id) {
     }
 
     // ── Milling ────────────────────────────────────────────────────
+    const millSettings = ex.millSettings || [{}];
     const s2 = stepCard('⚙️','Milling', ex.millingDone, `
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
-        ${tf('millSetting','Mill Gap Setting','e.g. 0.8mm')}
-        ${tf('millNote','Notes','')}
-      </div>`
+      <div style="font-size:12px;font-weight:700;margin-bottom:6px;">Mill Gap Setting${millSettings.length>1?'s':''}</div>
+      ${millSettings.map((m,i)=>`
+        <div class="compact-row-3" style="grid-template-columns:1fr 1fr 24px;">
+          ${tf('millSetting_'+i,'Setting','e.g. 0.8mm')}
+          ${tf('millSetting_'+i+'_reason','Reason for change','')}
+          <button class="del-btn" onclick="removeExSample(${id},'millSettings',${i})">✕</button>
+        </div>`).join('')}
+      <button class="btn btn-ghost btn-sm" onclick="addExSample(${id},'millSettings')" style="margin-top:2px;">+ Add Setting</button>
+      <div style="margin-top:10px;">${tf('millNote','Notes','')}</div>`
     );
 
     // ── Step 3: Mash ──────────────────────────────────────────────────────
