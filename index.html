@@ -3019,6 +3019,22 @@ function fixBrewLogIds() {
     b.mash    = b.mash    || {};
     b.checks  = b.checks  || {};
     b.execution = b.execution || {};
+
+    // Backfill batchNo for ingredients that have an rmId but no batch —
+    // this happens for entries saved before batch tracking was linked to
+    // Raw Materials properly. Fills in from the RM's most recent batch.
+    [...b.grains, ...b.hops, ...b.yeast, ...b.other, ...b.boilAdd].forEach(ing => {
+      if (ing.rmId && !ing.batchNo) {
+        const rm = state.rawMaterials.find(r=>r.id==ing.rmId);
+        const batches = rm?.batches || [];
+        const picked = batches.length ? [...batches].sort((a,c)=>(c.deliveryDate||'').localeCompare(a.deliveryDate||''))[0] : null;
+        if (picked) {
+          ing.batchNo = picked.batchNo;
+          if (picked.extractLdk != null) ing.extractLdk = picked.extractLdk;
+          if (picked.alphaAcid  != null) ing.alphaAcid  = picked.alphaAcid;
+        }
+      }
+    });
   });
   state.nextBrewId = nextId;
 }
