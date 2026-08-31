@@ -61,6 +61,7 @@
   .compact-field-xs .inp { text-align: center; padding-left: 4px; padding-right: 4px; }
   .rs-sparge-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
   .compact-row-3 { display: grid; grid-template-columns: 1fr 1fr 24px; gap: 6px; align-items: center; margin-bottom: 6px; }
+  .compact-row-4 { display: grid; grid-template-columns: 1fr 1fr 1fr 24px; gap: 6px; align-items: center; margin-bottom: 6px; }
 
   .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
   .grid3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 18px; }
@@ -198,6 +199,7 @@
     .ip-step-card .lbl { font-size: 10px !important; }
     .rs-sparge-grid { gap: 6px !important; }
     .compact-row-3 { gap: 3px !important; }
+    .compact-row-4 { gap: 3px !important; }
     /* Delete/remove buttons in ingredient rows shouldn't take a full row alone */
     .brew-detail .del-btn { width: fit-content; align-self: flex-end; }
   }
@@ -1080,8 +1082,8 @@ function printBrewDayWorksheet(id) {
     <div class="step-title">🛢️ Wort Transfer to Boil Kettle</div>
     <div class="step-body">
       <div class="field-row">${blankLine('Transfer Start Time')}${blankLine('°Plato at Start')}</div>
-      ${sampleTable('Running Samples (every 15 min) — 10 readings', ['Time','°Plato'], 10)}
-      ${sampleTable('Sparging — 10 readings', ['Time','Liquor (L)'], 10)}
+      ${sampleTable('Running Samples (every 15 min) — 10 readings', ['Time','°Plato','Collected (L)'], 10)}
+      ${sampleTable('Sparging — 10 readings', ['Time','Liquor (L)','Collected (L)'], 10)}
       <div class="field-row">${blankLine('Transfer End Time')}${blankLine('Final Run °Plato')}</div>
       <div class="fl">Notes</div><div class="notes-box"></div>
     </div>
@@ -1513,9 +1515,10 @@ function renderBrewDetail(id) {
           <div style="font-size:12px;font-weight:700;margin-bottom:6px;">Running Samples (every 15 min)</div>
           <div id="transfer-samples-${id}">
             ${transferSamples.map((s,i)=>`
-              <div class="compact-row-3">
+              <div class="compact-row-4">
                 ${tf('transferSample_'+i+'_time','Time','HH:MM')}
                 ${tn('transferSample_'+i+'_gravity','°Plato','e.g. 12.5','0.1')}
+                ${tn('transferSample_'+i+'_collected','Collected (L)','','0.1')}
                 <button class="del-btn" onclick="removeExSample(${id},'transferSamples',${i})">✕</button>
               </div>`).join('')}
           </div>
@@ -1524,9 +1527,10 @@ function renderBrewDetail(id) {
         <div style="background:var(--bg);border-radius:8px;padding:10px;">
           <div style="font-size:12px;font-weight:700;margin-bottom:6px;">Sparging</div>
           ${spargeSamples.map((s,i)=>`
-            <div class="compact-row-3">
+            <div class="compact-row-4">
               ${tf('sparge_'+i+'_time','Time','HH:MM')}
               ${tn('sparge_'+i+'_vol','Liquor (L)','','0.1')}
+              ${tn('sparge_'+i+'_collected','Collected (L)','','0.1')}
               <button class="del-btn" onclick="removeExSample(${id},'spargeSamples',${i})">✕</button>
             </div>`).join('')}
           <button class="btn btn-ghost btn-sm" onclick="addExSample(${id},'spargeSamples')">+ Sparge</button>
