@@ -1245,19 +1245,7 @@ function renderBrewDetail(id) {
       </div>`;
     }
 
-    // ── Step 1: Grain Weighing ──────────────────────────────────────────────
-    const s1 = stepCard('⚖️','Grain Weighing', ex.grainWeighDone, `
-      <div style="font-size:12px;color:var(--muted);margin-bottom:8px;">Target quantities from recipe:</div>
-      ${(log.grains||[]).map((g,i)=>`
-        <div style="display:grid;grid-template-columns:1fr 80px 80px;gap:8px;align-items:center;margin-bottom:6px;">
-          <div style="font-size:13px;font-weight:600;">${g.name||'—'}</div>
-          <div style="font-size:12px;color:var(--muted);">Target: ${g.qty||0} ${g.unit||'kg'}</div>
-          ${tn('grainActual_'+i,'Actual ('+( g.unit||'kg')+')',g.qty||'','0.01')}
-        </div>`).join('')}
-      <div style="margin-top:10px;">${tf('grainWeighNote','Notes / Variance','Any substitution or adjustment...')}</div>`
-    );
-
-    // ── Step 2: Milling ────────────────────────────────────────────────────
+    // ── Milling ────────────────────────────────────────────────────
     const s2 = stepCard('⚙️','Milling', ex.millingDone, `
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
         ${tf('millSetting','Mill Gap Setting','e.g. 0.8mm')}
@@ -1298,24 +1286,10 @@ function renderBrewDetail(id) {
           ${log.mash?.cerealMash?.enabled?tn('strikeVol2Actual','Vol Stage 2 (L)',log.strikeVol2||'','0.1'):'<div></div>'}
         </div>
       </div>
-      ${mashRows||'<div style="font-size:13px;color:var(--muted);">No mash steps enabled in Draft.</div>'}
-      <div style="background:var(--bg);border-radius:8px;padding:10px;margin-top:4px;">
-        <div style="font-size:12px;font-weight:700;margin-bottom:6px;">Mash In pH & Mash Out pH</div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
-          ${tn('mashInPHActual','Mash In pH (actual)',log.mashInPH||'','0.01')}
-          ${tn('mashOutPHActual','Mash Out pH (actual)',log.mashOutPH||'','0.01')}
-        </div>
-        <div style="margin-top:8px;">${tf('mashPHAdjNote','pH adjustment notes','')}</div>
-      </div>`
+      ${mashRows||'<div style="font-size:13px;color:var(--muted);">No mash steps enabled in Draft.</div>'}`
     );
 
-    // ── Step 4: Lautering ─────────────────────────────────────────────────
-    const s4 = stepCard('🚿','Lautering', ex.lauterDone, `
-      ${startEnd('lauterStart','lauterEnd')}
-      <div style="margin-top:8px;">${tf('lauterNote','Notes','')}</div>`
-    );
-
-    // ── Step 5: Recirculation ─────────────────────────────────────────────
+    // ── Recirculation ─────────────────────────────────────────────
     const s5 = stepCard('🔄','Recirculation (Vorlauf)', ex.recircDone, `
       ${startEnd('recircStart','recircEnd')}
       <div style="margin-top:8px;">${tf('recircNote','Notes','')}</div>`
@@ -1330,30 +1304,30 @@ function renderBrewDetail(id) {
         ${tf('transferKettleStart','Transfer Start Time','HH:MM')}
         ${tn('transferKettleStartGravity','°Plato at Start','e.g. 12.5','0.1')}
       </div>
-      <!-- Running samples -->
-      <div style="font-size:12px;font-weight:700;margin-bottom:6px;">Running Samples (every 15 min)</div>
-      <div id="transfer-samples-${id}">
-        ${transferSamples.map((s,i)=>`
-          <div style="display:grid;grid-template-columns:60px 80px 80px 1fr 24px;gap:6px;align-items:center;margin-bottom:6px;">
-            ${tf('transferSample_'+i+'_time','Time','HH:MM')}
-            ${tn('transferSample_'+i+'_vol','Vol in Kettle (L)','','1')}
-            ${tn('transferSample_'+i+'_gravity','°Plato','e.g. 12.5','0.1')}
-            ${tf('transferSample_'+i+'_note','Note','')}
-            <button class="del-btn" onclick="removeExSample(${id},'transferSamples',${i})">✕</button>
-          </div>`).join('')}
-      </div>
-      <button class="btn btn-ghost btn-sm" onclick="addExSample(${id},'transferSamples')">+ Sample</button>
-      <!-- Sparging -->
-      <div style="background:var(--bg);border-radius:8px;padding:10px;margin-top:10px;margin-bottom:10px;">
-        <div style="font-size:12px;font-weight:700;margin-bottom:6px;">Sparging</div>
-        ${spargeSamples.map((s,i)=>`
-          <div style="display:grid;grid-template-columns:1fr 1fr 1fr 24px;gap:6px;align-items:center;margin-bottom:6px;">
-            ${tf('sparge_'+i+'_time','Time','HH:MM')}
-            ${tn('sparge_'+i+'_vol','Sparge Liquor (L)','','0.1')}
-            ${tf('sparge_'+i+'_note','Note','')}
-            <button class="del-btn" onclick="removeExSample(${id},'spargeSamples',${i})">✕</button>
-          </div>`).join('')}
-        <button class="btn btn-ghost btn-sm" onclick="addExSample(${id},'spargeSamples')">+ Sparge</button>
+      <!-- Running Samples & Sparging — side by side since they overlap in time -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+        <div>
+          <div style="font-size:12px;font-weight:700;margin-bottom:6px;">Running Samples (every 15 min)</div>
+          <div id="transfer-samples-${id}">
+            ${transferSamples.map((s,i)=>`
+              <div style="display:grid;grid-template-columns:1fr 1fr 24px;gap:6px;align-items:center;margin-bottom:6px;">
+                ${tf('transferSample_'+i+'_time','Time','HH:MM')}
+                ${tn('transferSample_'+i+'_gravity','°Plato','e.g. 12.5','0.1')}
+                <button class="del-btn" onclick="removeExSample(${id},'transferSamples',${i})">✕</button>
+              </div>`).join('')}
+          </div>
+          <button class="btn btn-ghost btn-sm" onclick="addExSample(${id},'transferSamples')">+ Sample</button>
+        </div>
+        <div style="background:var(--bg);border-radius:8px;padding:10px;">
+          <div style="font-size:12px;font-weight:700;margin-bottom:6px;">Sparging</div>
+          ${spargeSamples.map((s,i)=>`
+            <div style="display:grid;grid-template-columns:1fr 1fr 24px;gap:6px;align-items:center;margin-bottom:6px;">
+              ${tf('sparge_'+i+'_time','Time','HH:MM')}
+              ${tn('sparge_'+i+'_vol','Liquor (L)','','0.1')}
+              <button class="del-btn" onclick="removeExSample(${id},'spargeSamples',${i})">✕</button>
+            </div>`).join('')}
+          <button class="btn btn-ghost btn-sm" onclick="addExSample(${id},'spargeSamples')">+ Sparge</button>
+        </div>
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;">
         ${tf('transferKettleEnd','Transfer End Time','HH:MM')}
@@ -1377,8 +1351,9 @@ function renderBrewDetail(id) {
         ${tf('boilAdd_'+i+'_actualTime','Actual Time','HH:MM')}
       </div>`).join('');
     const s7 = stepCard('🔥','Boil', ex.boilDone, `
-      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:10px;">
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:8px;margin-bottom:10px;">
         ${tf('boilStart','Boil Start Time','HH:MM')}
+        ${tn('preboilVol','Preboil Volume (L)',log.preboilVol||'','0.1')}
         ${tn('preboilGravity','Pre-boil (°Plato)','e.g. 10.5','0.1')}
         ${tn('preboilPH','Pre-boil pH','5.4','0.01')}
       </div>
@@ -1429,7 +1404,7 @@ function renderBrewDetail(id) {
 
     return `<div style="grid-column:1/-1;">
       <div style="font-size:15px;font-weight:700;margin-bottom:16px;">🗓️ Brew Day Execution</div>
-      ${s1}${s2}${s3}${s4}${s5}${s6}${s7}${s8}${s9}${s10}
+      ${s2}${s3}${s5}${s6}${s7}${s8}${s9}${s10}
     </div>`;
   }
 
