@@ -966,6 +966,184 @@ function printRecipe(id) {
   win.onload = () => { win.focus(); win.print(); };
 }
 
+function printBrewDayWorksheet(id) {
+  const log = state.brewLogs.find(b=>b.id===id);
+  if (!log) return;
+
+  const blankLine = (label, unit) => `<div class="field"><span class="fl">${label}${unit?' ('+unit+')':''}</span><span class="fb"></span></div>`;
+  const blankRow = (cells) => `<tr>${cells.map(c=>`<td>&nbsp;</td>`).join('')}</tr>`;
+  const sampleTable = (title, cols, rows) => `
+    <div class="section">
+      <div class="section-title">${title}</div>
+      <table>
+        <thead><tr>${cols.map(c=>`<th>${c}</th>`).join('')}</tr></thead>
+        <tbody>${Array.from({length:rows}).map(()=>blankRow(cols)).join('')}</tbody>
+      </table>
+    </div>`;
+
+  const mashSteps = [
+    ['cerealMash','Cereal Mash'], ['bGlucanRest','β-Glucan Rest'], ['proteinRest','Protein Rest'],
+    ['bAmylaseRest','β-Amylase Rest'], ['sacchRest','Saccharification Rest'], ['mashOut','Mash Out'],
+  ].filter(([k])=>log.mash?.[k]?.enabled);
+
+  const hopRows = (log.hops||[]).map(h=>`<tr>
+    <td>${h.name||'—'}${h.batchNo?' ('+h.batchNo+')':''}</td>
+    <td style="text-align:right;">t=${h.tMin!=null?h.tMin:'—'}</td>
+    <td style="text-align:right;">${h.qty||0} ${h.unit||''}</td>
+    <td>&nbsp;</td>
+  </tr>`).join('');
+
+  const boilAddRows = (log.boilAdd||[]).map(a=>`<tr>
+    <td>${a.name||'—'}</td>
+    <td style="text-align:right;">t=${a.tMin!=null?a.tMin:'—'}</td>
+    <td>&nbsp;</td>
+  </tr>`).join('');
+
+  const html = `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Brew Day Worksheet — ${beerName(log.beer)}${log.batchNo?' Batch '+log.batchNo:''}</title>
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, 'Segoe UI', Arial, sans-serif; color: #1a1a1a; padding: 28px; max-width: 850px; margin: 0 auto; }
+  h1 { font-size: 20px; margin-bottom: 4px; }
+  .subtitle { color: #666; font-size: 12px; margin-bottom: 18px; }
+  .header-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 22px; padding: 12px; background: #f7f7f7; border-radius: 8px; font-size: 11px; }
+  .header-grid strong { display: block; font-size: 13px; margin-top: 2px; }
+  .step { margin-bottom: 18px; page-break-inside: avoid; }
+  .step-title { font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; background: #1a1a1a; color: #fff; padding: 5px 10px; border-radius: 4px 4px 0 0; }
+  .step-body { border: 1px solid #ccc; border-top: none; border-radius: 0 0 4px 4px; padding: 10px 12px; }
+  .field-row { display: flex; flex-wrap: wrap; gap: 14px 22px; margin-bottom: 4px; }
+  .field { display: flex; align-items: flex-end; gap: 6px; }
+  .fl { font-size: 11px; color: #555; white-space: nowrap; }
+  .fb { display: inline-block; min-width: 70px; border-bottom: 1.3px solid #999; height: 16px; }
+  .section { margin: 10px 0; }
+  .section-title { font-size: 11px; font-weight: 700; text-transform: uppercase; color: #555; margin-bottom: 5px; }
+  table { width: 100%; border-collapse: collapse; font-size: 11px; margin-bottom: 4px; }
+  th { text-align: left; font-size: 10px; text-transform: uppercase; color: #888; padding: 4px 6px; border-bottom: 1.5px solid #333; }
+  td { padding: 7px 6px; border-bottom: 1px solid #ddd; height: 20px; }
+  .notes-box { border: 1px solid #ccc; border-radius: 4px; height: 44px; margin-top: 4px; }
+  @media print {
+    body { padding: 0; }
+    @page { margin: 12mm; }
+    .step { page-break-inside: avoid; }
+  }
+</style>
+</head>
+<body>
+  <h1>Brew Day Worksheet — ${beerName(log.beer)}${log.batchNo?' — Batch '+log.batchNo:''}</h1>
+  <div class="subtitle">Fill in by hand during the brew, then transcribe into the dashboard afterwards.</div>
+
+  <div class="header-grid">
+    <div>Brew Date<strong>${fmtDate(log.date)}</strong></div>
+    <div>Target Volume<strong>${log.targetVol||'—'} L</strong></div>
+    <div>Brewer<strong>${log.brewer||'—'}</strong></div>
+    <div>Date brewed<span class="fb" style="display:block;margin-top:4px;"></span></div>
+  </div>
+
+  <!-- Milling -->
+  <div class="step">
+    <div class="step-title">⚙️ Milling</div>
+    <div class="step-body">
+      <div class="field-row">${blankLine('Mill Gap Setting')}${blankLine('Mill Gap Setting (2)')}</div>
+      <div class="fl">Notes</div><div class="notes-box"></div>
+    </div>
+  </div>
+
+  <!-- Mash -->
+  <div class="step">
+    <div class="step-title">🌡️ Mash</div>
+    <div class="step-body">
+      <div class="section-title">Strike Water</div>
+      <div class="field-row">${blankLine('Vol Stage 1','L')}${blankLine('Temp Stage 1','°C')}${log.mash?.cerealMash?.enabled?blankLine('Vol Stage 2','L'):''}</div>
+      ${mashSteps.map(([k,label])=>`
+        <div class="section">
+          <div class="section-title">${label} <span style="font-weight:400;text-transform:none;color:#999;">— recipe: ${log.mash[k].temp||'—'}°C · ${log.mash[k].duration||'—'} min</span></div>
+          <div class="field-row">${blankLine('Start Time')}${blankLine('End Time')}${blankLine('Actual Temp','°C')}${blankLine('pH')}</div>
+        </div>`).join('') || '<div style="font-size:11px;color:#999;">No mash steps enabled in recipe.</div>'}
+      <div class="fl">Notes</div><div class="notes-box"></div>
+    </div>
+  </div>
+
+  <!-- Recirculation -->
+  <div class="step">
+    <div class="step-title">🔄 Recirculation (Vorlauf)</div>
+    <div class="step-body">
+      <div class="field-row">${blankLine('Start Time')}${blankLine('End Time')}</div>
+      <div class="fl">Notes</div><div class="notes-box"></div>
+    </div>
+  </div>
+
+  <!-- Wort Transfer + Sampling + Sparging -->
+  <div class="step">
+    <div class="step-title">🛢️ Wort Transfer to Boil Kettle</div>
+    <div class="step-body">
+      <div class="field-row">${blankLine('Transfer Start Time')}${blankLine('°Plato at Start')}</div>
+      ${sampleTable('Running Samples (every 15 min) — 10 readings', ['Time','°Plato'], 10)}
+      ${sampleTable('Sparging — 10 readings', ['Time','Liquor (L)'], 10)}
+      <div class="field-row">${blankLine('Transfer End Time')}${blankLine('Final Run °Plato')}</div>
+      <div class="fl">Notes</div><div class="notes-box"></div>
+    </div>
+  </div>
+
+  <!-- Boil -->
+  <div class="step">
+    <div class="step-title">🔥 Boil</div>
+    <div class="step-body">
+      <div class="field-row">${blankLine('Boil Start Time')}${blankLine('Preboil Volume','L')}${blankLine('Pre-boil °Plato')}${blankLine('Pre-boil pH')}</div>
+      ${hopRows?`<div class="section-title">Hop Additions</div>
+      <table><thead><tr><th>Hop</th><th style="text-align:right;">Recipe t=</th><th style="text-align:right;">Qty</th><th>Actual Time</th></tr></thead>
+      <tbody>${hopRows}</tbody></table>`:''}
+      ${boilAddRows?`<div class="section-title">Boil Additions</div>
+      <table><thead><tr><th>Addition</th><th style="text-align:right;">Recipe t=</th><th>Actual Time</th></tr></thead>
+      <tbody>${boilAddRows}</tbody></table>`:''}
+      <div class="field-row">${blankLine('Boil End Time')}${blankLine('Postboil Volume','L')}</div>
+    </div>
+  </div>
+
+  <!-- Whirlpool -->
+  <div class="step">
+    <div class="step-title">🌀 Whirlpool</div>
+    <div class="step-body">
+      <div class="section-title">Transfer to Whirlpool Kettle</div>
+      <div class="field-row">${blankLine('Start Time')}${blankLine('End Time')}</div>
+      <div class="section-title">Whirlpool Process</div>
+      <div class="field-row">${blankLine('Start Time')}${blankLine('End Time')}</div>
+      <div class="fl">Notes</div><div class="notes-box"></div>
+    </div>
+  </div>
+
+  <!-- Transfer to Fermenter -->
+  <div class="step">
+    <div class="step-title">🛢️ Transfer to Fermenter</div>
+    <div class="step-body">
+      <div class="field-row">${blankLine('Start Time')}${blankLine('End Time')}${blankLine('Target Tank')}${blankLine('Oxygen Setting')}</div>
+      <div class="fl">Notes</div><div class="notes-box"></div>
+    </div>
+  </div>
+
+  <!-- Yeast Pitch -->
+  <div class="step">
+    <div class="step-title">🧫 Yeast Pitch</div>
+    <div class="step-body">
+      <div style="font-size:11px;color:#666;margin-bottom:6px;">
+        Recipe: ${log.yeastForm==='dry'?'Dried':'Rehydrated/Slurry'} · ${(log.yeast||[]).map(y=>y.name+(y.qty?' ('+y.qty+' '+y.unit+')':'')).join(', ')||'—'}
+      </div>
+      <div class="field-row">${blankLine('Pitch Time')}${blankLine('Wort Temp at Pitch','°C')}${blankLine('OG °Plato')}</div>
+      <div class="fl">Notes</div><div class="notes-box"></div>
+    </div>
+  </div>
+</body>
+</html>`;
+
+  const win = window.open('', '_blank');
+  if (!win) { toast('Please allow popups to print the worksheet', false); return; }
+  win.document.write(html);
+  win.document.close();
+  win.onload = () => { win.focus(); win.print(); };
+}
+
 
 function openBrewLog(id) {
   window._openBrewId = id;
@@ -1441,6 +1619,7 @@ function renderBrewDetail(id) {
       <div style="display:flex;gap:8px;flex-wrap:wrap;">
         <button class="btn btn-ghost btn-sm" onclick="deleteBrewLog(${id})">🗑 Delete</button>
         ${viewingDraft?`<button class="btn btn-ghost btn-sm" onclick="printRecipe(${id})">🖨️ Print / Save PDF</button>`:''}
+        ${viewingInProgress?`<button class="btn btn-ghost btn-sm" onclick="printBrewDayWorksheet(${id})">🖨️ Print Worksheet</button>`:''}
         ${isCompleted?`<button class="btn btn-ghost btn-sm" onclick="window._brewEditMode=!window._brewEditMode;renderContent()">
           ${window._brewEditMode?'✕ Cancel Edit':'✏️ Edit'}</button>`:''}
         ${isCompleted&&window._brewEditMode?`<button class="btn btn-primary" onclick="saveBrewEdits(${id})">💾 Save Changes</button>`:''}
