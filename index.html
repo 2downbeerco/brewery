@@ -623,6 +623,7 @@ function switchTab(id) {
   // individual brew was last open.
   if (currentTab === 'brew_log' && id !== 'brew_log') {
     window._openBrewId = null;
+    window._brewViewTab = null;
   }
   currentTab = id;
   document.getElementById('topbar-title').textContent = TABS.find(t=>t.id===id)?.label || '';
@@ -820,6 +821,7 @@ function newBrewLog() {
 
 function openBrewLog(id) {
   window._openBrewId = id;
+  window._brewViewTab = null;
   renderContent();
 }
 
@@ -843,9 +845,19 @@ function renderBrewDetail(id) {
   const isDraft      = log.status==='Draft';
   const isInProgress = log.status==='In Progress';
   const isCompleted  = log.status==='Completed';
-  const canEdit      = isDraft || isInProgress || !!window._brewEditMode;
   const steps = ['Draft','In Progress','Completed'];
   const stepIdx = steps.indexOf(log.status);
+
+  // The step bar can be clicked to look back at an earlier stage's data
+  // (e.g. view the Recipe or In Progress execution log after the brew is
+  // Completed) without changing the brew's actual status. viewTab defaults
+  // to the real status; canEdit only applies when viewing the stage that
+  // matches the real current status (or explicit edit mode on Completed).
+  const viewTab = window._brewViewTab || log.status;
+  const viewingDraft      = viewTab==='Draft';
+  const viewingInProgress = viewTab==='In Progress';
+  const viewingCompleted  = viewTab==='Completed';
+  const canEdit = (viewingDraft && isDraft) || (viewingInProgress && isInProgress) || (viewingCompleted && isCompleted && !!window._brewEditMode);
 
   // ── Get all batches for an RM from PO history ─────────────────────────────
   function getBatches(rmId) {
@@ -1307,12 +1319,20 @@ function renderBrewDetail(id) {
     </div>
 
     <div class="brew-status-bar">
-      ${steps.map((s,i)=>`<div class="brew-status-step ${i<stepIdx?'done':i===stepIdx?'current':''}">${i<stepIdx?'✓ ':''} ${s==='Draft'?'Recipe':s}</div>`).join('')}
+      ${steps.map((s,i)=>{
+        const label = s==='Draft'?'Recipe':s;
+        // Recipe is always viewable; In Progress once the brew has started; Completed only once finished.
+        const reachable = s==='Draft' || (s==='In Progress' && !isDraft) || (s==='Completed' && isCompleted);
+        const isCurrent = viewTab===s;
+        return `<div class="brew-status-step ${i<stepIdx?'done':i===stepIdx?'current':''}"
+          style="${reachable?'cursor:pointer;':'cursor:default;opacity:0.5;'}${isCurrent&&viewTab!==log.status?'outline:2px solid var(--accent);outline-offset:-2px;':''}"
+          ${reachable?`onclick="window._brewViewTab='${s}';renderContent()"`:''}>${i<stepIdx?'✓ ':''} ${label}</div>`;
+      }).join('')}
     </div>
 
     <!-- ── HEADER ── -->
     <div class="brew-section" style="margin-bottom:20px;">
-      <div class="brew-section-title">${isDraft?'Recipe Details':'Brew Details'}</div>
+      <div class="brew-section-title">${viewingDraft?'Recipe Details':'Brew Details'}</div>
       <div class="form-row form-row-3" style="margin-bottom:12px;">
         <div class="form-group"><label class="lbl">Brew Date</label>
           <input class="inp" type="date" value="${log.date}" ${!canEdit?'disabled':''}
@@ -1328,7 +1348,7 @@ function renderBrewDetail(id) {
             onchange="updateLog(${id},'targetVol',+this.value)">
         </div>
       </div>
-      <div class="form-row" style="display:grid;grid-template-columns:${isDraft?'1fr 1fr 1fr 1fr':'1fr 1fr 1fr 1fr 1fr'};gap:12px;margin-bottom:0;flex-wrap:wrap;">
+      <div class="form-row" style="display:grid;grid-template-columns:${viewingDraft?'1fr 1fr 1fr 1fr':'1fr 1fr 1fr 1fr 1fr'};gap:12px;margin-bottom:0;flex-wrap:wrap;">
         <div class="form-group"><label class="lbl">Brewer</label>
           <input class="inp" value="${log.brewer||''}" placeholder="Name" ${!canEdit?'disabled':''}
             onchange="updateLog(${id},'brewer',this.value)">
@@ -1337,7 +1357,7 @@ function renderBrewDetail(id) {
           <input class="inp" value="${log.batchNo||''}" placeholder="e.g. BB-2025-06" ${!canEdit?'disabled':''}
             onchange="updateLog(${id},'batchNo',this.value)">
         </div>
-        ${!isDraft?`<div class="form-group"><label class="lbl">Tank</label>
+        ${!viewingDraft?`<div class="form-group"><label class="lbl">Tank</label>
           <select class="inp" ${!canEdit?'disabled':''} onchange="updateLog(${id},'tank',this.value)">
             <option value="">— select —</option>
             ${state.tanks.filter(t=>t.stage==='Empty'||t.id===log.tank).map(t=>`<option value="${t.id}" ${log.tank===t.id?'selected':''}>${t.name}</option>`).join('')}
@@ -1467,19 +1487,19 @@ function renderBrewDetail(id) {
         </div>
       </div>
 
-      <!-- Brew Day Checklist (In Progress only) -->
-      ${isInProgress ? ipChecklist() : ''}
+      <!-- Brew Day Checklist -->
+      ${viewingInProgress ? ipChecklist() : ''}
 
       <!-- Notes -->
       <div class="brew-section" style="grid-column:1/-1;">
         <div class="brew-section-title">📝 Notes</div>
-        <textarea class="inp" rows="4" placeholder="${isDraft?'Recipe notes, special instructions for brewer…':'Observations, issues, adjustments during brew day…'}" ${!canEdit?'disabled':''}
+        <textarea class="inp" rows="4" placeholder="${viewingDraft?'Recipe notes, special instructions for brewer…':'Observations, issues, adjustments during brew day…'}" ${!canEdit?'disabled':''}
           onchange="updateLog(${id},'notes',this.value)">${log.notes||''}</textarea>
       </div>
 
     </div>
 
-    ${isCompleted?`
+    ${viewingCompleted?`
     <div style="margin-top:20px;background:#DCFCE7;border:1px solid #86EFAC;border-radius:10px;padding:16px 20px;font-size:14px;color:#15803D;">
       ✅ <strong>Brew completed.</strong>${log.inventoryDeducted?' Stock was deducted on completion.':' Stock was not automatically deducted.'}
     </div>`:''}
