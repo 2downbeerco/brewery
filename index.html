@@ -57,6 +57,8 @@
   .inp-sm { padding: 7px 10px; font-size: 13px; }
   .compact-field { max-width: 90px; }
   .compact-field .inp { text-align: center; }
+  .compact-field-xs { max-width: 55px; }
+  .compact-field-xs .inp { text-align: center; padding-left: 4px; padding-right: 4px; }
   .rs-sparge-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
   .compact-row-3 { display: grid; grid-template-columns: 1fr 1fr 24px; gap: 6px; align-items: center; margin-bottom: 6px; }
 
@@ -1245,9 +1247,10 @@ function renderBrewDetail(id) {
         ${content||''}
       </div>`;
     }
-    function tf(key, label, placeholder) {
+    function tf(key, label, placeholder, xs) {
       const isNote = /note/i.test(label);
-      return `<div${isNote?'':' class="compact-field"'}><label class="lbl" style="font-size:10px;">${label}</label>
+      const cls = isNote ? '' : (xs ? ' class="compact-field-xs"' : ' class="compact-field"');
+      return `<div${cls}><label class="lbl" style="font-size:10px;">${label}</label>
         <input class="inp inp-sm" value="${ex[key]||''}" placeholder="${placeholder||''}"
           onchange="updateExField(${id},'${key}',this.value)"></div>`;
     }
@@ -1357,14 +1360,14 @@ function renderBrewDetail(id) {
     const hopAdditions = (log.hops||[]).map((h,i)=>`
       <div style="display:grid;grid-template-columns:1fr 60px 80px 80px;gap:6px;align-items:center;margin-bottom:6px;">
         <div style="font-size:13px;font-weight:600;">${h.name||'Hop '+(i+1)} <span style="font-size:11px;color:var(--muted);">${h.batchNo?'('+h.batchNo+')':''}</span></div>
-        ${tf('hop_'+i+'_t','t= (min)','60')}
+        ${tf('hop_'+i+'_t','t= (min)','60',true)}
         ${tn('hop_'+i+'_qty','Qty ('+( h.unit||'kg')+')',h.qty||'','0.001')}
         ${tf('hop_'+i+'_actualTime','Actual Time','HH:MM')}
       </div>`).join('');
     const boilAdds = (log.boilAdd||[]).map((a,i)=>`
       <div style="display:grid;grid-template-columns:1fr 80px 80px;gap:6px;align-items:center;margin-bottom:6px;">
         <div style="font-size:13px;font-weight:600;">${a.name||'Addition '+(i+1)}</div>
-        ${tf('boilAdd_'+i+'_t','t= (min)','0')}
+        ${tf('boilAdd_'+i+'_t','t= (min)','0',true)}
         ${tf('boilAdd_'+i+'_actualTime','Actual Time','HH:MM')}
       </div>`).join('');
     const s7 = stepCard('🔥','Boil', ex.boilDone, `
@@ -1401,7 +1404,7 @@ function renderBrewDetail(id) {
             ${state.tanks.filter(t=>t.stage==='Empty'||t.id===ex.fvTank).map(t=>`<option value="${t.id}" ${ex.fvTank===t.id?'selected':''}>${t.name}</option>`).join('')}
           </select>
         </div>
-        ${tf('o2Setting','Oxygen Setting','e.g. 1.0 LPM')}
+        ${tf('o2Setting','Oxygen Setting','e.g. 1.0 LPM',true)}
       </div>
       <div style="margin-top:8px;">${tf('fvNote','Notes','')}</div>`
     );
