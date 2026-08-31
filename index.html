@@ -1686,6 +1686,11 @@ function renderBrewDetail(id) {
               onchange="updateLog(${id},'fgTarget',this.value)" style="width:50%;">
           </div>
         </div>
+        <div class="form-group"><label class="lbl">Target ABV (%)</label>
+          <input class="inp" id="bl-abv" type="number" step="0.1" placeholder="e.g. 5.2"
+            value="${log.targetABV!=null?log.targetABV:''}"
+            onchange="updateBrewField('targetABV',+this.value)">
+        </div>
         <div class="form-group"><label class="lbl">Actual OG</label>
           <input class="inp" value="${(()=>{
             const plato = log.execution?.ogActual;
@@ -1704,11 +1709,6 @@ function renderBrewDetail(id) {
             if (og==null || fg==null || isNaN(fg)) return '';
             return ((og-fg)*131.25).toFixed(2);
           })()}" disabled placeholder="from Actual OG / FG" style="color:var(--muted);background:var(--bg);"></div>
-        <div class="form-group"><label class="lbl">Target ABV (%)</label>
-          <input class="inp" id="bl-abv" type="number" step="0.1" placeholder="e.g. 5.2"
-            value="${log.targetABV!=null?log.targetABV:''}"
-            onchange="updateBrewField('targetABV',+this.value)">
-        </div>
       </div>
     </div>
 
