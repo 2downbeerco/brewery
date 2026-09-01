@@ -4408,8 +4408,7 @@ function renderBeerInv() {
               <td><span style="font-family:monospace;font-weight:600;color:var(--accent);">${b.batchNo||'—'}</span></td>
               <td style="color:var(--muted);font-size:12px;">🧊 Cold Room</td>
               <td>
-                <input class="inp inp-sm" type="number" min="0" step="0.1" value="${b.litres||0}" style="width:80px;"
-                  onchange="updateBeerInvField(${ii},${bi},'litres',+this.value)">
+                <span style="font-size:14px;font-weight:600;" title="Volume can only be changed via Transfer to Cold Room, Record Wastage, or keg assignment in the bar order app">${b.litres||0}</span>
                 <span style="font-size:12px;color:var(--muted);margin-left:2px;">L</span>
               </td>
               <td style="color:var(--muted);">—</td>
@@ -4587,6 +4586,8 @@ function openAddBeerInvBatch() {
   document.getElementById('bim-beer').value = getBeers(true)[0]?.code||'';
   document.getElementById('bim-batchno').value = '';
   document.getElementById('bim-litres').value = '';
+  document.getElementById('bim-litres').disabled = false;
+  document.getElementById('bim-litres').title = '';
   document.getElementById('beer-inv-modal').style.display = 'flex';
 }
 
@@ -4603,6 +4604,8 @@ function openEditBeerInvBatch(ii, bi) {
   document.getElementById('bim-beer').value = inv.beer;
   document.getElementById('bim-batchno').value = b.batchNo||'';
   document.getElementById('bim-litres').value = b.litres||0;
+  document.getElementById('bim-litres').disabled = true;
+  document.getElementById('bim-litres').title = 'Volume can only be changed via Transfer to Cold Room, Record Wastage, or keg assignment in the bar order app';
   document.getElementById('beer-inv-modal').style.display = 'flex';
 }
 
@@ -4626,7 +4629,10 @@ function saveBeerInvBatch() {
     if (invIdx < 0) { toast('That batch no longer exists — it may have changed elsewhere. Please refresh and try again.', false); closeBeerInvModal(); return; }
     const batchIdx = state.beerInventory[invIdx].batches.findIndex(b=>b.batchNo===origBatchNo);
     if (batchIdx < 0) { toast('That batch no longer exists — it may have changed elsewhere. Please refresh and try again.', false); closeBeerInvModal(); return; }
-    state.beerInventory[invIdx].batches[batchIdx] = { batchNo, litres };
+    // Litres is never changed via this modal on edit — preserve whatever
+    // is currently stored, regardless of the (disabled) field's value.
+    const preservedLitres = state.beerInventory[invIdx].batches[batchIdx].litres || 0;
+    state.beerInventory[invIdx].batches[batchIdx] = { batchNo, litres: preservedLitres };
   } else {
     // Add new — find or create inv entry for this beer
     let invIdx = state.beerInventory.findIndex(x=>x.beer===beer);
@@ -4638,20 +4644,6 @@ function saveBeerInvBatch() {
     state.beerInventory[invIdx].batches.push({ batchNo, litres });
   }
   saveState(); closeBeerInvModal(); renderContent(); toast('Saved');
-}
-
-function updateBeerInvField(ii, bi, field, val) {
-  // Resolve the target by stable key (beer + batchNo) rather than the raw
-  // indices — protects against a background sync reordering the array
-  // between when this input was rendered and when its onchange commits.
-  const invAtRender = state.beerInventory[ii];
-  const batchAtRender = invAtRender && invAtRender.batches[bi];
-  if (!batchAtRender) { toast('That batch no longer exists — refresh and try again.', false); renderContent(); return; }
-  const invIdx = state.beerInventory.findIndex(x=>x.beer===invAtRender.beer);
-  const batchIdx = invIdx>=0 ? state.beerInventory[invIdx].batches.findIndex(b=>b.batchNo===batchAtRender.batchNo) : -1;
-  if (invIdx<0 || batchIdx<0) { toast('That batch no longer exists — refresh and try again.', false); renderContent(); return; }
-  state.beerInventory[invIdx].batches[batchIdx][field] = val;
-  saveState(); renderContent();
 }
 
 function deleteBeerInvBatch(ii, bi) {
