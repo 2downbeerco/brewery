@@ -2525,10 +2525,11 @@ function openTankDetail(id) {
       <button class="btn btn-primary btn-sm" onclick="addTempLog('${id}')">+ Add</button>
     </div>` : '';
 
-  // Carbonating stage now shows only CO2 Volume / Carbonation Date / Ready
-  // Date (in carbonationSection below) — no gravity/FG history here.
+  // Carbonating and Ready stages show only the carbonationSection fields
+  // below (CO2 Volume / Carbonation Date / Ready Date) — no gravity/temp
+  // history from earlier stages.
 
-  const gravitySection = isCarbonating ? '' : `
+  const gravitySection = (isCarbonating || isReady) ? '' : `
     <div style="margin-top:16px;">
       <div style="font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:10px;">
         ${isFermenting?'Gravity & Temp Log':isConditioning?'Conditioning Temp Log':'Process Log'}
