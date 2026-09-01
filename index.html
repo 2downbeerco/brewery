@@ -2059,7 +2059,7 @@ function updateIngUnit(section, idx, selectEl) {
 // so a correction made from either place behaves identically everywhere:
 // updates the brew log, the tank (if not the one currently being edited),
 // the cold room entry, and renames (not deletes) the bar order record.
-function cascadeBatchNoChange(beer, oldBatchNo, newBatchNo, excludeTankId) {
+function cascadeBatchNoChange(beer, oldBatchNo, newBatchNo, targetTankId) {
   if (!beer || oldBatchNo === newBatchNo) return;
 
   const stripPrefix = (bn) => {
@@ -2070,28 +2070,34 @@ function cascadeBatchNoChange(beer, oldBatchNo, newBatchNo, excludeTankId) {
   const oldStripped = stripPrefix(oldBatchNo).replace(/^0+/,'');
   const newStripped = stripPrefix(newBatchNo).replace(/^0+/,'');
 
-  // Note: the brew log itself is NOT searched-and-updated here. The one
-  // caller of this function (updateBatchNo) already updates the exact log
-  // being edited directly, by its unique id — unambiguous. Searching for
-  // "a Completed log matching beer + old batch number" here as well was
-  // redundant at best, and actively dangerous when two entries happened to
-  // share a similar/duplicate batch number: it would find and silently
-  // overwrite the WRONG one too.
+  // Note: the brew log itself is NOT searched-and-updated here — the caller
+  // already updates the exact log being edited directly, by its unique id.
 
-  // Update any OTHER tank still tracking this batch (excluding the one
-  // currently being saved, which already has its own new value applied)
-  state.tanks.forEach((t,ti) => {
-    if (t.id===excludeTankId) return;
-    if (t.beer===beer && String(t.batchNo||'').replace(/^0+/,'')===oldStripped) {
+  // Only touch the ONE specific tank this correction is actually linked to
+  // (passed in as targetTankId) — never blind-search "any tank matching
+  // beer + old batch number". A blind search is dangerous the moment two
+  // different batches ever end up sharing a similar/duplicate number (which
+  // is exactly the scenario a correction like this is often cleaning up
+  // after): it can find and silently rename an unrelated, currently-active
+  // batch's tank instead of the one actually being corrected.
+  if (targetTankId) {
+    const ti = state.tanks.findIndex(t=>t.id===targetTankId);
+    if (ti>=0 && state.tanks[ti].beer===beer && String(state.tanks[ti].batchNo||'').replace(/^0+/,'')===oldStripped) {
       state.tanks[ti].batchNo = newBatchNo;
     }
-  });
+  }
 
-  // Update the cold room entry, if this batch is already there
+  // Cold room: only update if there's exactly ONE unambiguous match — if
+  // zero or more than one batch matches the old number, skip rather than
+  // guess which one was meant.
   const invIdx = state.beerInventory.findIndex(x=>x.beer===beer);
   if (invIdx>=0) {
-    const batchIdx = state.beerInventory[invIdx].batches.findIndex(b=>String(b.batchNo).replace(/^0+/,'')===oldStripped);
-    if (batchIdx>=0) state.beerInventory[invIdx].batches[batchIdx].batchNo = newStripped;
+    const matches = state.beerInventory[invIdx].batches.filter(b=>String(b.batchNo).replace(/^0+/,'')===oldStripped);
+    if (matches.length===1) {
+      matches[0].batchNo = newStripped;
+    } else if (matches.length>1) {
+      console.warn(`cascadeBatchNoChange: ${matches.length} cold room batches match "${oldStripped}" for ${beer} — skipped, ambiguous`);
+    }
   }
 
   // Rename (not delete) the bar order entry, preserving its litres/active state
@@ -2107,7 +2113,8 @@ function updateBatchNo(id, newVal) {
   if (oldVal === newVal) return;
   log.batchNo = newVal;
 
-  cascadeBatchNoChange(log.beer, oldVal, newVal, null);
+  const linkedTankId = log.tank || log.execution?.fvTank || null;
+  cascadeBatchNoChange(log.beer, oldVal, newVal, linkedTankId);
 
   saveState(); renderContent();
   toast(`Batch number updated and synced to tank, cold room, and bar order`);
