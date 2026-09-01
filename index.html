@@ -4394,7 +4394,7 @@ function renderBeerInv() {
         </div>
       </div>
       <div class="tbl-wrap"><table class="tbl" style="table-layout:fixed;width:100%;">
-        <colgroup><col style="width:30%"><col style="width:15%"><col style="width:15%"><col style="width:15%"><col style="width:15%"><col style="width:10%"></colgroup>
+        <colgroup><col style="width:26%"><col style="width:15%"><col style="width:15%"><col style="width:15%"><col style="width:15%"><col style="width:14%"></colgroup>
         <thead><tr>
           <th>Beer</th><th>Batch No.</th><th>Location</th><th>Volume</th><th>Since</th><th></th>
         </tr></thead>
@@ -4413,10 +4413,10 @@ function renderBeerInv() {
                 <span style="font-size:12px;color:var(--muted);margin-left:2px;">L</span>
               </td>
               <td style="color:var(--muted);">—</td>
-              <td style="white-space:nowrap;">
-                <button class="btn btn-ghost btn-sm" onclick="openRecordWastage(${ii},${bi})" title="Record wastage (e.g. yeast sediment drained before shipping)">💧</button>
-                <button class="btn btn-ghost btn-sm" onclick="openEditBeerInvBatch(${ii},${bi})" style="margin-left:2px;">✏️</button>
-                <button class="btn btn-ghost btn-sm" onclick="deleteBeerInvBatch(${ii},${bi})" style="margin-left:2px;">🗑</button>
+              <td style="white-space:nowrap;padding-left:6px;padding-right:6px;">
+                <button class="btn btn-ghost btn-sm" onclick="openRecordWastage(${ii},${bi})" title="Record wastage (e.g. yeast sediment drained before shipping)" style="padding:5px 7px;">💧</button>
+                <button class="btn btn-ghost btn-sm" onclick="openEditBeerInvBatch(${ii},${bi})" style="padding:5px 7px;margin-left:1px;">✏️</button>
+                <button class="btn btn-ghost btn-sm" onclick="deleteBeerInvBatch(${ii},${bi})" style="padding:5px 7px;margin-left:1px;">🗑</button>
               </td>
             </tr>`).join('') +
             (batches.length>1?`<tr style="background:var(--bg);">
