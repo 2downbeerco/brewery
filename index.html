@@ -2627,8 +2627,14 @@ function changeTankStage(id, newStage) {
   const i = state.tanks.findIndex(x=>x.id===id);
   if (i<0) return;
   const tank = state.tanks[i];
-  // If clearing tank, go through archive prompt
+  // If clearing tank, confirm first — this is a destructive change and
+  // shouldn't jump straight into the archive prompt without warning
   if (newStage === 'Empty' && tank.beer && tank.stage !== 'Empty') {
+    const beerLabel = (state.beers.find(b=>b.code===tank.beer)?.name||tank.beer) + (tank.batchNo?' Batch '+tank.batchNo:'');
+    if (!confirm(`Empty ${tank.name}? This will clear ${beerLabel} from the tank.`)) {
+      openTankDetail(id); // re-render to reset the dropdown back to current stage
+      return;
+    }
     const obj = { ...tank, stage: 'Empty', beer: null, batchNo: null, vol: 0, batchVol: null, since: null, temp: null };
     closeTankDetail();
     showArchivePrompt(id, tank, obj);
