@@ -1692,6 +1692,9 @@ function renderBrewDetail(id) {
             onchange="updateBrewField('targetABV',+this.value)">
         </div>
         ${viewingCompleted?`
+        <div class="form-group"><label class="lbl">Actual Volume (L)</label>
+          <input class="inp" type="number" step="0.1" value="${log.actualVol!=null?log.actualVol:''}" placeholder="${log.targetVol||'—'}" ${!canEdit?'disabled':''}
+            onchange="updateActualVolume(${id},+this.value)"></div>
         <div class="form-group"><label class="lbl">Actual OG</label>
           <input class="inp" value="${(()=>{
             const plato = log.execution?.ogActual;
@@ -2116,6 +2119,32 @@ function updateFiltrationField(id, field, val, rmName, deductedField) {
   saveState(); renderContent();
 }
 
+// Records the actual volume that went into the fermenter (post-wastage),
+// which may differ from Target Volume and can be corrected by the brewer
+// multiple times. Each call directly sets the linked tank's current volume
+// and batch size to match — safe to call repeatedly since it's a direct
+// correction, not an accumulating deduction like stock usage.
+function updateActualVolume(id, val) {
+  const i = state.brewLogs.findIndex(b=>b.id===id);
+  if (i<0) return;
+  const log = state.brewLogs[i];
+  log.actualVol = val;
+
+  const tankId = log.tank || log.execution?.fvTank || null;
+  const tank = tankId ? state.tanks.find(t=>t.id===tankId) : null;
+  if (tank && tank.beer === log.beer && String(tank.batchNo||'').replace(/^0+/,'') === String(log.batchNo||'').replace(/^0+/,'')) {
+    // Only correct the tank if it still holds THIS batch — if it's already
+    // been cleared/reassigned, don't touch whatever's in there now.
+    const ti = state.tanks.findIndex(t=>t.id===tankId);
+    state.tanks[ti].vol = val;
+    state.tanks[ti].batchVol = val;
+  } else if (tankId && !tank) {
+    toast('Linked tank not found — actual volume recorded, but tank could not be updated', false);
+  }
+
+  saveState(); renderContent();
+}
+
 function startBrew(id) {
   const i = state.brewLogs.findIndex(b=>b.id===id);
   state.brewLogs[i].status = 'In Progress';
@@ -2184,6 +2213,7 @@ function completeBrew(id) {
   const li = state.brewLogs.findIndex(b=>b.id===id);
   state.brewLogs[li].status = 'Completed';
   state.brewLogs[li].inventoryDeducted = true;
+  if (targetTank) state.brewLogs[li].tank = targetTank.id; // ensure reliably set even if it came from ex.fvTank
   saveState(); renderNav(); renderContent();
   toast(`Brew completed. ${allIngs.length} item(s) deducted${targetTank?', assigned to '+targetTank.name:''}.`);
 }
