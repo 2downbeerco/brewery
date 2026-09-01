@@ -2581,10 +2581,10 @@ function renderTanks() {
             <select class="inp" id="tm-beer"><option value="">— Empty —</option>
             ${getBeers(true).map(b=>`<option value="${b.code}">${b.name}</option>`).join('')}</select>
           </div>
-          <div class="form-group"><label class="lbl">Batch No.</label><input class="inp" id="tm-batchno" placeholder="e.g. BB-2025-06"></div>
+          <div class="form-group"><label class="lbl">Batch No.</label><input class="inp" id="tm-batchno" placeholder="corrected via Brew Log"></div>
         </div>
         <div class="form-row form-row-2">
-          <div class="form-group"><label class="lbl">Current Vol (L)</label><input class="inp" id="tm-vol" type="number"></div>
+          <div class="form-group"><label class="lbl">Current Vol (L)</label><input class="inp" id="tm-vol" type="number" placeholder="auto-updates"></div>
           <div class="form-group"><label class="lbl">Batch Size (L)</label><input class="inp" id="tm-batchvol" type="number" placeholder="Total litres brewed"></div>
           <div class="form-group"><label class="lbl">Stage</label>
             <select class="inp" id="tm-stage">
@@ -3050,6 +3050,7 @@ function openAddTank(){
   document.getElementById('tm-beer').value='';
   document.getElementById('tm-beer').disabled = true;
   document.getElementById('tm-batchno').disabled = true;
+  document.getElementById('tm-vol').disabled = true;
   document.getElementById('tm-type').value='Fermenter';
   // A new tank always starts empty — its first batch comes from Complete
   // Brew or Transfer to Another Tank, not typed in here directly.
@@ -3070,20 +3071,25 @@ function editTank(id){
   // Complete Brew or Transfer to Another Tank, so every batch that ever
   // lands in a tank is guaranteed to trace back to a Brew Log record.
   // Occupied tank: Beer is locked (changing it isn't a "correction", it's
-  // a different batch entirely — clear the tank properly instead); Batch
-  // No. stays editable for fixing typos, and cascades everywhere via
-  // cascadeBatchNoChange().
+  // a different batch entirely — clear the tank properly instead). Batch
+  // No. is also locked — corrections happen only in the Brew Log now,
+  // which cascades here via cascadeBatchNoChange().
   if (t.beer) {
     document.getElementById('tm-empty-note').style.display = 'none';
     document.getElementById('tm-beer-batch-row').style.display = 'grid';
     document.getElementById('tm-beer').disabled = true;
-    document.getElementById('tm-batchno').disabled = false;
   } else {
     document.getElementById('tm-empty-note').style.display = 'block';
     document.getElementById('tm-beer-batch-row').style.display = 'none';
     document.getElementById('tm-beer').disabled = true;
-    document.getElementById('tm-batchno').disabled = true;
   }
+  // Batch No. corrections now happen only in the Brew Log (which cascades
+  // to the tank, cold room, and bar order automatically) — not editable here.
+  document.getElementById('tm-batchno').disabled = true;
+  // Current Vol changes automatically through Record Wastage, keg
+  // assignments, Transfer to Cold Room, and Transfer to Another Tank —
+  // never hand-edited here.
+  document.getElementById('tm-vol').disabled = true;
   // Batch Size is sourced from the linked brew log's Actual Volume (entered
   // under Completed) — falls back to whatever's already stored on the tank
   // if no matching brew log/actual volume exists yet.
@@ -3130,14 +3136,10 @@ function saveTank(){
       return;
     }
     const i=state.tanks.findIndex(x=>x.id===id);
-
-    // Detect batch number change (same beer, different batch) — cascade
-    // consistently to brew log, other tanks, cold room, and bar order,
-    // same as editing the batch number from the Brew Log does.
-    if (existing && existing.beer && obj.beer===existing.beer && obj.batchNo && existing.batchNo && obj.batchNo!==existing.batchNo) {
-      cascadeBatchNoChange(existing.beer, existing.batchNo, obj.batchNo, id);
-    }
-
+    // Note: Beer, Batch No., and Current Vol are all disabled in this form
+    // — they only ever change via Complete Brew, Transfer to Another Tank,
+    // Transfer to Cold Room, keg assignments, Record Wastage, or a Batch
+    // No. correction made in the Brew Log (which cascades here on its own).
     state.tanks[i]={...state.tanks[i],...obj};
   } else {
     obj.id='T'+state.nextTankId++;
