@@ -1678,7 +1678,7 @@ function renderBrewDetail(id) {
         </div>
         <div class="form-group"><label class="lbl">Batch No.</label>
           <input class="inp" value="${log.batchNo||''}" placeholder="e.g. BB-2025-06" ${!canEdit?'disabled':''}
-            onchange="updateLog(${id},'batchNo',this.value)">
+            onchange="updateBatchNo(${id},this.value)">
         </div>
         ${!viewingDraft?`<div class="form-group"><label class="lbl">Tank</label>
           <select class="inp" ${!canEdit?'disabled':''} onchange="updateLog(${id},'tank',this.value)">
@@ -2044,6 +2044,77 @@ function updateIngUnit(section, idx, selectEl) {
     const i = state.brewLogs.findIndex(b=>b.id===id);
     if (i>=0) state.brewLogs[i][section][idx].unit = unit;
   }
+}
+
+// Single shared cascade for a batch number correction, used from BOTH the
+// Brew Log's Batch No. field and the Tanks tab's edit modal — previously
+// these were two separate, inconsistent code paths (one renamed the bar
+// order entry and updated the brew log, the other deleted the bar order
+// entry and never touched the brew log at all). Now both go through this
+// so a correction made from either place behaves identically everywhere:
+// updates the brew log, the tank (if not the one currently being edited),
+// the cold room entry, and renames (not deletes) the bar order record.
+function cascadeBatchNoChange(beer, oldBatchNo, newBatchNo, excludeTankId) {
+  if (!beer || oldBatchNo === newBatchNo) return;
+
+  const stripPrefix = (bn) => {
+    bn = String(bn||'');
+    if (beer && bn.toUpperCase().startsWith(beer.toUpperCase())) return bn.slice(beer.length);
+    return bn;
+  };
+  const oldStripped = stripPrefix(oldBatchNo).replace(/^0+/,'');
+  const newStripped = stripPrefix(newBatchNo).replace(/^0+/,'');
+
+  // Update the linked Completed brew log
+  const logIdx = state.brewLogs.findIndex(b =>
+    b.status==='Completed' && b.beer===beer &&
+    String(b.batchNo||'').replace(/^0+/,'')===oldStripped
+  );
+  if (logIdx>=0) state.brewLogs[logIdx].batchNo = newBatchNo;
+
+  // Update any OTHER tank still tracking this batch (excluding the one
+  // currently being saved, which already has its own new value applied)
+  state.tanks.forEach((t,ti) => {
+    if (t.id===excludeTankId) return;
+    if (t.beer===beer && String(t.batchNo||'').replace(/^0+/,'')===oldStripped) {
+      state.tanks[ti].batchNo = newBatchNo;
+    }
+  });
+
+  // Update the cold room entry, if this batch is already there
+  const invIdx = state.beerInventory.findIndex(x=>x.beer===beer);
+  if (invIdx>=0) {
+    const batchIdx = state.beerInventory[invIdx].batches.findIndex(b=>String(b.batchNo).replace(/^0+/,'')===oldStripped);
+    if (batchIdx>=0) state.beerInventory[invIdx].batches[batchIdx].batchNo = newStripped;
+  }
+
+  // Rename (not delete) the bar order entry, preserving its litres/active state
+  renameBrewBatchInKegs(beer, oldStripped, newStripped);
+}
+
+function updateBatchNo(id, newVal) {
+  const i = state.brewLogs.findIndex(b=>b.id===id);
+  if (i<0) return;
+  const log = state.brewLogs[i];
+  const oldVal = log.batchNo || '';
+  newVal = (newVal||'').trim();
+  if (oldVal === newVal) return;
+  log.batchNo = newVal;
+
+  cascadeBatchNoChange(log.beer, oldVal, newVal, null);
+
+  saveState(); renderContent();
+  toast(`Batch number updated and synced to tank, cold room, and bar order`);
+}
+
+async function renameBrewBatchInKegs(beer, oldBatch, newBatch) {
+  if (!beer || oldBatch === newBatch) return;
+  return queueBreweryBeersUpdate((current) => {
+    const idx = current.findIndex(b => b.beer===beer && String(b.batch).replace(/^0+/,'')===String(oldBatch).replace(/^0+/,''));
+    if (idx<0) return null;
+    current[idx].batch = newBatch;
+    return current;
+  }, `renaming ${beer} batch ${oldBatch} to ${newBatch}`);
 }
 
 function updateLog(id, field, val) {
@@ -2502,7 +2573,10 @@ function renderTanks() {
           </div>
           <div class="form-group"><label class="lbl">Capacity (L)</label><input class="inp" id="tm-cap" type="number"></div>
         </div>
-        <div class="form-row form-row-2">
+        <div id="tm-empty-note" style="background:var(--bg);border-radius:8px;padding:10px 12px;margin-bottom:12px;font-size:12px;color:var(--muted);display:none;">
+          An empty tank gets its first batch via <strong>Complete Brew</strong> in the Brew Log, or <strong>Transfer to Another Tank</strong> from a tank that already has one — not entered here directly. This keeps every batch traceable back to a Brew Log record.
+        </div>
+        <div class="form-row form-row-2" id="tm-beer-batch-row">
           <div class="form-group"><label class="lbl">Beer</label>
             <select class="inp" id="tm-beer"><option value="">— Empty —</option>
             ${getBeers(true).map(b=>`<option value="${b.code}">${b.name}</option>`).join('')}</select>
@@ -2974,7 +3048,13 @@ function openAddTank(){
   document.getElementById('tm-delete').style.display='none';
   document.getElementById('tm-stage').value='Empty';
   document.getElementById('tm-beer').value='';
+  document.getElementById('tm-beer').disabled = true;
+  document.getElementById('tm-batchno').disabled = true;
   document.getElementById('tm-type').value='Fermenter';
+  // A new tank always starts empty — its first batch comes from Complete
+  // Brew or Transfer to Another Tank, not typed in here directly.
+  document.getElementById('tm-empty-note').style.display = 'block';
+  document.getElementById('tm-beer-batch-row').style.display = 'none';
   document.getElementById('tank-modal').style.display='flex';
 }
 function editTank(id){
@@ -2986,6 +3066,24 @@ function editTank(id){
   document.getElementById('tm-beer').value=t.beer||'';
   document.getElementById('tm-batchno').value=t.batchNo||'';
   document.getElementById('tm-vol').value=t.vol||0;
+  // Empty tank: no way to hand-enter a beer/batch here — must come from
+  // Complete Brew or Transfer to Another Tank, so every batch that ever
+  // lands in a tank is guaranteed to trace back to a Brew Log record.
+  // Occupied tank: Beer is locked (changing it isn't a "correction", it's
+  // a different batch entirely — clear the tank properly instead); Batch
+  // No. stays editable for fixing typos, and cascades everywhere via
+  // cascadeBatchNoChange().
+  if (t.beer) {
+    document.getElementById('tm-empty-note').style.display = 'none';
+    document.getElementById('tm-beer-batch-row').style.display = 'grid';
+    document.getElementById('tm-beer').disabled = true;
+    document.getElementById('tm-batchno').disabled = false;
+  } else {
+    document.getElementById('tm-empty-note').style.display = 'block';
+    document.getElementById('tm-beer-batch-row').style.display = 'none';
+    document.getElementById('tm-beer').disabled = true;
+    document.getElementById('tm-batchno').disabled = true;
+  }
   // Batch Size is sourced from the linked brew log's Actual Volume (entered
   // under Completed) — falls back to whatever's already stored on the tank
   // if no matching brew log/actual volume exists yet.
@@ -3005,14 +3103,6 @@ function editTank(id){
   document.getElementById('tank-modal').style.display='flex';
 }
 function closeTankModal(){document.getElementById('tank-modal').style.display='none';}
-async function removeOldBatch(beer, batch) {
-  return queueBreweryBeersUpdate((current) => {
-    const updated = current.filter(b => !(b.beer===beer && String(b.batch).replace(/^0+/,'')===String(batch).replace(/^0+/,'')));
-    if (updated.length === current.length) return null; // nothing to remove
-    return updated;
-  }, `removing old ${beer} batch ${batch}`);
-}
-
 function saveTank(){
   const id=document.getElementById('tm-id').value;
   const obj={
@@ -3041,9 +3131,11 @@ function saveTank(){
     }
     const i=state.tanks.findIndex(x=>x.id===id);
 
-    // Detect batch number change (same beer, different batch) — remove old batch entirely from bar order
+    // Detect batch number change (same beer, different batch) — cascade
+    // consistently to brew log, other tanks, cold room, and bar order,
+    // same as editing the batch number from the Brew Log does.
     if (existing && existing.beer && obj.beer===existing.beer && obj.batchNo && existing.batchNo && obj.batchNo!==existing.batchNo) {
-      removeOldBatch(existing.beer, existing.batchNo);
+      cascadeBatchNoChange(existing.beer, existing.batchNo, obj.batchNo, id);
     }
 
     state.tanks[i]={...state.tanks[i],...obj};
@@ -4414,7 +4506,6 @@ function renderBeerInv() {
               <td style="color:var(--muted);">—</td>
               <td style="white-space:nowrap;padding-left:6px;padding-right:6px;">
                 <button class="btn btn-ghost btn-sm" onclick="openRecordWastage(${ii},${bi})" title="Record wastage (e.g. yeast sediment drained before shipping)" style="padding:5px 7px;">💧</button>
-                <button class="btn btn-ghost btn-sm" onclick="openEditBeerInvBatch(${ii},${bi})" style="padding:5px 7px;margin-left:1px;">✏️</button>
                 <button class="btn btn-ghost btn-sm" onclick="deleteBeerInvBatch(${ii},${bi})" style="padding:5px 7px;margin-left:1px;">🗑</button>
               </td>
             </tr>`).join('') +
@@ -4588,24 +4679,6 @@ function openAddBeerInvBatch() {
   document.getElementById('bim-litres').value = '';
   document.getElementById('bim-litres').disabled = false;
   document.getElementById('bim-litres').title = '';
-  document.getElementById('beer-inv-modal').style.display = 'flex';
-}
-
-function openEditBeerInvBatch(ii, bi) {
-  // Resolve by array position at click time (fine here — this is a direct
-  // user click, not a value committed later after a possible background sync)
-  const inv = state.beerInventory[ii];
-  const b = inv.batches[bi];
-  document.getElementById('beer-inv-modal-title').textContent = 'Edit Batch';
-  document.getElementById('bim-orig-beer').value = inv.beer;
-  document.getElementById('bim-orig-batchno').value = b.batchNo||'';
-  document.getElementById('bim-inv-idx').value = ii; // kept for backward compat, unused for commit
-  document.getElementById('bim-batch-idx').value = bi;
-  document.getElementById('bim-beer').value = inv.beer;
-  document.getElementById('bim-batchno').value = b.batchNo||'';
-  document.getElementById('bim-litres').value = b.litres||0;
-  document.getElementById('bim-litres').disabled = true;
-  document.getElementById('bim-litres').title = 'Volume can only be changed via Transfer to Cold Room, Record Wastage, or keg assignment in the bar order app';
   document.getElementById('beer-inv-modal').style.display = 'flex';
 }
 
