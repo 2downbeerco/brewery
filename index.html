@@ -1722,7 +1722,37 @@ function renderBrewDetail(id) {
                   onchange="updateFiltrationField(${id},'spindasolQty',+this.value,'Spindasol','_spindasolDeducted')"></div>
             </div>
           </div>
-        </div>`:''}
+        </div>
+        ${(log.carbonationVol || log.carbonationDate || log.readyDate || log.finalTemp!=null) ? `
+        <div class="form-group" style="grid-column:1/-1;">
+          <div style="background:var(--bg);border-radius:8px;padding:10px 12px;margin-top:4px;">
+            <div style="font-size:13px;font-weight:700;margin-bottom:8px;color:var(--text);">Tank Lifecycle <span style="font-weight:400;color:var(--muted);">(from ${log.tankName||'tank'})</span></div>
+            <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;font-size:13px;">
+              <div><div style="font-size:10px;color:var(--muted);text-transform:uppercase;">CO₂ Volume</div><div>${log.carbonationVol!=null?log.carbonationVol:'—'}</div></div>
+              <div><div style="font-size:10px;color:var(--muted);text-transform:uppercase;">Carbonation Date</div><div>${log.carbonationDate?fmtDate(log.carbonationDate):'—'}</div></div>
+              <div><div style="font-size:10px;color:var(--muted);text-transform:uppercase;">Ready Date</div><div>${log.readyDate?fmtDate(log.readyDate):'—'}</div></div>
+              <div><div style="font-size:10px;color:var(--muted);text-transform:uppercase;">Final Temp</div><div>${log.finalTemp!=null?log.finalTemp+'°C':'—'}</div></div>
+            </div>
+          </div>
+        </div>` : ''}
+        ${log.gravityLog && log.gravityLog.length ? `
+        <div class="form-group" style="grid-column:1/-1;">
+          <div style="background:var(--bg);border-radius:8px;padding:10px 12px;margin-top:4px;">
+            <div style="font-size:13px;font-weight:700;margin-bottom:8px;color:var(--text);">
+              Gravity Readings <span style="font-weight:400;color:var(--muted);">(archived from ${log.tankName||'tank'})</span>
+            </div>
+            <div class="tbl-wrap"><table class="tbl" style="font-size:13px;">
+              <thead><tr><th>Date</th><th>Stage</th><th>°Plato</th><th>Temp (°C)</th><th>Notes</th></tr></thead>
+              <tbody>${log.gravityLog.map(g=>`<tr>
+                <td>${fmtDate(g.date)}</td>
+                <td>${g.stage?`<span style="font-size:11px;font-weight:600;color:${stageColors[g.stage]||'var(--muted)'};">${g.stage}</span>`:'<span style="color:var(--muted);">—</span>'}</td>
+                <td>${g.plato!=null||g.sg!=null?`<strong>${g.plato||g.sg}°P</strong>`:'—'}</td>
+                <td>${g.temp!=null?g.temp+'°C':'—'}</td>
+                <td style="color:var(--muted);">${g.note||''}</td>
+              </tr>`).join('')}</tbody>
+            </table></div>
+          </div>
+        </div>` : ''}`:''}
       </div>
     </div>
 
@@ -2817,29 +2847,57 @@ function archiveAndClearTank(tankId) {
   if(!tank) return;
   const gLog = state.gravityLogs[tankId] || [];
 
-  // Create completed brew log entry
-  const archiveEntry = {
-    id: state.nextBrewId++,
-    status: 'Completed',
-    date: tank.since || new Date().toISOString().slice(0,10),
-    beer: tank.beer,
-    batchNo: tank.batchNo || '',
-    brewer: '',
-    targetVol: tank.batchVol || tank.vol || 0,
-    yieldEst: tank.vol || 0,
-    tank: tankId,
-    tankName: tank.name,
-    archivedFrom: 'tank',
-    archiveDate: new Date().toISOString().slice(0,10),
-    gravityLog: gLog,
-    temp: tank.temp,
-    carbonationVol: tank.carbonationVol || null,
-    carbonationDate: tank.carbonationDate || null,
-    readyDate: tank.readyDate || null,
-    notes: `Archived from ${tank.name} on ${new Date().toLocaleDateString('en-IN')}`,
-  };
+  // Try to find the ORIGINAL brew log for this batch — the one created via
+  // Recipe → In Progress → Complete Brew, which already holds the full
+  // recipe and execution data. If found, merge the tank's post-brew-day
+  // lifecycle (gravity readings across Fermenting/Conditioning/Carbonating,
+  // carbonation info, ready date) into THAT record instead of creating a
+  // second, disconnected "Completed" entry with no recipe/execution data.
+  const existingLog = tank.beer ? state.brewLogs.find(b =>
+    b.status === 'Completed' && b.beer === tank.beer &&
+    String(b.batchNo||'').replace(/^0+/,'') === String(tank.batchNo||'').replace(/^0+/,'') &&
+    !b.archivedFrom // exclude previously auto-generated archive-only entries
+  ) : null;
 
-  state.brewLogs.push(archiveEntry);
+  if (existingLog) {
+    const li = state.brewLogs.findIndex(b => b.id === existingLog.id);
+    state.brewLogs[li] = {
+      ...state.brewLogs[li],
+      tank: tankId,
+      tankName: tank.name,
+      gravityLog: gLog,
+      finalTemp: tank.temp,
+      carbonationVol: tank.carbonationVol || null,
+      carbonationDate: tank.carbonationDate || null,
+      readyDate: tank.readyDate || null,
+      archiveDate: new Date().toISOString().slice(0,10),
+    };
+  } else {
+    // No matching original brew log found (e.g. legacy tank set up
+    // outside the brew log flow) — fall back to a standalone archive entry
+    const archiveEntry = {
+      id: state.nextBrewId++,
+      status: 'Completed',
+      date: tank.since || new Date().toISOString().slice(0,10),
+      beer: tank.beer,
+      batchNo: tank.batchNo || '',
+      brewer: '',
+      targetVol: tank.batchVol || tank.vol || 0,
+      yieldEst: tank.vol || 0,
+      tank: tankId,
+      tankName: tank.name,
+      archivedFrom: 'tank',
+      archiveDate: new Date().toISOString().slice(0,10),
+      gravityLog: gLog,
+      finalTemp: tank.temp,
+      carbonationVol: tank.carbonationVol || null,
+      carbonationDate: tank.carbonationDate || null,
+      readyDate: tank.readyDate || null,
+      notes: `Archived from ${tank.name} on ${new Date().toLocaleDateString('en-IN')}`,
+    };
+    state.brewLogs.push(archiveEntry);
+  }
+
   // Clear gravity log for this tank
   state.gravityLogs[tankId] = [];
 
