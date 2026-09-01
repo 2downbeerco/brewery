@@ -820,7 +820,13 @@ function renderBrewList() {
           <div style="width:36px;height:36px;border-radius:8px;background:${beerColor(b.beer)};flex-shrink:0;"></div>
           <div style="flex:1;min-width:0;">
             <div style="font-size:15px;font-weight:700;">${beerName(b.beer)}</div>
-            <div style="font-size:13px;color:var(--muted);">${fmtDate(b.date)} · ${b.targetVol}L${b.batchNo?' · <strong>'+b.batchNo+'</strong>':''}${b.brewer?' · '+b.brewer:''}</div>
+            <div style="font-size:13px;color:var(--muted);">${fmtDate(b.date)} · ${(b.actualVol!=null?b.actualVol:b.targetVol)}L${(()=>{
+              const plato = b.execution?.ogActual;
+              const og = (plato!=null && plato!=='') ? 1 + (plato/(258.6-((plato/258.2)*227.1))) : null;
+              const fg = b.fgActual ? parseFloat(b.fgActual) : null;
+              if (og==null || fg==null || isNaN(fg)) return '';
+              return ' · '+((og-fg)*131.25).toFixed(1)+'% ABV';
+            })()}${b.batchNo?' · <strong>'+b.batchNo+'</strong>':''}${b.brewer?' · '+b.brewer:''}</div>
           </div>
           <div style="text-align:right;flex-shrink:0;">
             <span class="badge ${statusClass[b.status]||'badge-gray'}">${b.status==='Draft'?'Recipe':b.status}</span>
