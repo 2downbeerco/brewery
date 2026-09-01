@@ -2663,6 +2663,15 @@ function confirmTransferToColdRoom() {
   const correctedBatchVol = t.batchVol ? Math.max(vol, t.batchVol + diff) : vol;
   state.tanks[ti].batchVol = correctedBatchVol;
 
+  // Zero the tank's volume immediately (the beer is physically leaving the
+  // tank right now). Without this, the tank would still read as Ready with
+  // its old volume during the window before the archive prompt is
+  // confirmed — causing computeBreweryBeers() to generate BOTH a 'tank'
+  // entry (inflated to the corrected total) and the new 'coldroom' entry
+  // for the same batch number in the same sync cycle, which the bar order
+  // merge then collapses unpredictably instead of representing correctly.
+  state.tanks[ti].vol = 0;
+
   // Keep the linked brew log's Actual Volume in sync with this same correction
   const linkedLog = t.beer ? state.brewLogs.find(b =>
     b.status==='Completed' && b.beer===t.beer &&
