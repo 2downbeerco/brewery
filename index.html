@@ -2070,12 +2070,13 @@ function cascadeBatchNoChange(beer, oldBatchNo, newBatchNo, excludeTankId) {
   const oldStripped = stripPrefix(oldBatchNo).replace(/^0+/,'');
   const newStripped = stripPrefix(newBatchNo).replace(/^0+/,'');
 
-  // Update the linked Completed brew log
-  const logIdx = state.brewLogs.findIndex(b =>
-    b.status==='Completed' && b.beer===beer &&
-    String(b.batchNo||'').replace(/^0+/,'')===oldStripped
-  );
-  if (logIdx>=0) state.brewLogs[logIdx].batchNo = newBatchNo;
+  // Note: the brew log itself is NOT searched-and-updated here. The one
+  // caller of this function (updateBatchNo) already updates the exact log
+  // being edited directly, by its unique id — unambiguous. Searching for
+  // "a Completed log matching beer + old batch number" here as well was
+  // redundant at best, and actively dangerous when two entries happened to
+  // share a similar/duplicate batch number: it would find and silently
+  // overwrite the WRONG one too.
 
   // Update any OTHER tank still tracking this batch (excluding the one
   // currently being saved, which already has its own new value applied)
