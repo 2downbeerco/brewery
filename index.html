@@ -2782,6 +2782,8 @@ function setTankFilter(f){window._tankFilter=f;renderContent();}
 function openAddTank(){
   ['tm-id','tm-name','tm-vol','tm-batchvol','tm-since','tm-temp','tm-batchno'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';}); 
   document.getElementById('tm-cap').value='1000';
+  document.getElementById('tm-batchvol').disabled = false;
+  document.getElementById('tm-batchvol').placeholder = 'Total litres brewed';
   document.getElementById('tank-modal-title').textContent='Add Tank';
   document.getElementById('tm-delete').style.display='none';
   document.getElementById('tm-stage').value='Empty';
@@ -2798,7 +2800,17 @@ function editTank(id){
   document.getElementById('tm-beer').value=t.beer||'';
   document.getElementById('tm-batchno').value=t.batchNo||'';
   document.getElementById('tm-vol').value=t.vol||0;
-  document.getElementById('tm-batchvol').value=t.batchVol||'';
+  // Batch Size is sourced from the linked brew log's Actual Volume (entered
+  // under Completed) — falls back to whatever's already stored on the tank
+  // if no matching brew log/actual volume exists yet.
+  const linkedLog = t.beer ? state.brewLogs.find(b =>
+    b.status==='Completed' && b.beer===t.beer &&
+    String(b.batchNo||'').replace(/^0+/,'')===String(t.batchNo||'').replace(/^0+/,'')
+  ) : null;
+  const batchVolVal = (linkedLog && linkedLog.actualVol!=null) ? linkedLog.actualVol : (t.batchVol||'');
+  document.getElementById('tm-batchvol').value = batchVolVal;
+  document.getElementById('tm-batchvol').disabled = true;
+  document.getElementById('tm-batchvol').placeholder = linkedLog ? 'from Actual Volume on brew log' : 'Total litres brewed';
   document.getElementById('tm-stage').value=t.stage;
   document.getElementById('tm-since').value=t.since||'';
   document.getElementById('tm-temp').value=t.temp!=null?t.temp:'';
