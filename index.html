@@ -4222,6 +4222,7 @@ function renderBeerInv() {
       <div style="padding:14px 18px;background:var(--bg);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;">
         <span style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:1px;">Inventory</span>
         <div style="display:flex;gap:8px;">
+          <button class="btn btn-ghost btn-sm" onclick="syncActualVolFromBarOrder()">🔄 Sync Actual Volume from Bar Order</button>
           <button class="btn btn-ghost btn-sm" onclick="openConsumedBatches()">📦 Consumed Batches</button>
           <button class="btn btn-primary btn-sm" onclick="openAddBeerInvBatch()">+ Add Batch</button>
         </div>
@@ -4335,6 +4336,53 @@ function renderBeerInv() {
         </div>
       </div>
     </div>`;
+}
+
+// One-time reconciliation: pulls the CURRENT "Litres Brewed" (bb.litres)
+// for every active batch in the bar order app right now, and sets it as
+// Actual Volume on the matching Completed brew log here. This is a
+// one-time data fix using today's live numbers — it does not create any
+// ongoing link between the two fields going forward.
+async function syncActualVolFromBarOrder() {
+  if (!confirm('This will pull the current "Litres Brewed" figure for every active batch in the bar order app right now, and set it as Actual Volume on the matching brew log here. Proceed?')) return;
+  try {
+    const res = await fetch(SB_URL + '/rest/v1/kegs?select=id,data&id=eq.__brewery_beers__', { headers: SB_HDR });
+    if (!res.ok) throw new Error('Failed to read bar order data: ' + res.status);
+    const rows = await res.json();
+    const breweryBeers = rows[0]?.data?.breweryBeers || [];
+    const activeBatches = breweryBeers.filter(b => !b.inactive);
+
+    if (!activeBatches.length) { toast('No active batches found in bar order app.', false); return; }
+
+    let updated = 0, notFound = [];
+    activeBatches.forEach(bb => {
+      const litresBrewed = bb.totalLitres!=null ? bb.totalLitres : bb.litres;
+      if (litresBrewed == null) return;
+      const matchingLog = state.brewLogs.find(log =>
+        log.status === 'Completed' && log.beer === bb.beer &&
+        String(log.batchNo||'').replace(/^0+/,'') === String(bb.batch||'').replace(/^0+/,'')
+      );
+      if (!matchingLog) { notFound.push(`${beerName(bb.beer)} batch ${bb.batch}`); return; }
+      const li = state.brewLogs.findIndex(l => l.id === matchingLog.id);
+      state.brewLogs[li].actualVol = litresBrewed;
+
+      // Also keep the linked tank's batch size consistent, same as manual entry
+      const tankId = matchingLog.tank || matchingLog.execution?.fvTank || null;
+      const tank = tankId ? state.tanks.find(t=>t.id===tankId) : null;
+      if (tank && tank.beer === bb.beer && String(tank.batchNo||'').replace(/^0+/,'') === String(bb.batch||'').replace(/^0+/,'')) {
+        const ti = state.tanks.findIndex(t=>t.id===tank.id);
+        state.tanks[ti].batchVol = litresBrewed;
+      }
+      updated++;
+    });
+
+    saveState(); renderContent();
+    let msg = `✓ Updated Actual Volume for ${updated} batch${updated!==1?'es':''}.`;
+    if (notFound.length) msg += ` No matching brew log found for: ${notFound.join(', ')}.`;
+    toast(msg, notFound.length===0);
+  } catch(e) {
+    toast('Sync failed: ' + e.message, false);
+  }
 }
 
 function openConsumedBatches() {
