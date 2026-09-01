@@ -2666,7 +2666,7 @@ function confirmTransferToColdRoom() {
   pushBatchSizeCorrection(t.beer, batchNo, correctedBatchVol);
 
   // Clear tank — trigger archive prompt
-  const newObj = { ...t, stage: 'Empty', beer: null, batchNo: null, vol: 0, batchVol: null, since: null, temp: null };
+  const newObj = { ...t, stage: 'Empty', beer: null, batchNo: null, vol: 0, batchVol: null, since: null, temp: null, carbonationVol: null, carbonationDate: null, readyDate: null };
   closeTankDetail();
   showArchivePrompt(tankId, t, newObj);
 
@@ -2695,7 +2695,7 @@ function changeTankStage(id, newStage) {
       openTankDetail(id); // re-render to reset the dropdown back to current stage
       return;
     }
-    const obj = { ...tank, stage: 'Empty', beer: null, batchNo: null, vol: 0, batchVol: null, since: null, temp: null };
+    const obj = { ...tank, stage: 'Empty', beer: null, batchNo: null, vol: 0, batchVol: null, since: null, temp: null, carbonationVol: null, carbonationDate: null, readyDate: null };
     closeTankDetail();
     showArchivePrompt(id, tank, obj);
     return;
