@@ -2663,6 +2663,16 @@ function confirmTransferToColdRoom() {
   const correctedBatchVol = t.batchVol ? Math.max(vol, t.batchVol + diff) : vol;
   state.tanks[ti].batchVol = correctedBatchVol;
 
+  // Keep the linked brew log's Actual Volume in sync with this same correction
+  const linkedLog = t.beer ? state.brewLogs.find(b =>
+    b.status==='Completed' && b.beer===t.beer &&
+    String(b.batchNo||'').replace(/^0+/,'')===String(t.batchNo||'').replace(/^0+/,'')
+  ) : null;
+  if (linkedLog) {
+    const li = state.brewLogs.findIndex(b=>b.id===linkedLog.id);
+    state.brewLogs[li].actualVol = correctedBatchVol;
+  }
+
   // Add to cold room inventory
   let invIdx = state.beerInventory.findIndex(x=>x.beer===t.beer);
   if (invIdx < 0) {
