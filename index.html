@@ -2592,8 +2592,10 @@ function openTankDetail(id) {
         </select>
       </div>
       <div><label class="lbl" style="font-size:10px;">Current Temp (°C)</label>
-        <input class="inp inp-sm" type="number" step="0.1" value="${t.temp||''}"
-          onchange="updateTankField('${id}','temp',+this.value)">
+        <input class="inp inp-sm" type="number" step="0.1" value="${(()=>{
+          const stageReadings = gLog.filter(g => g.stage === t.stage && g.temp != null);
+          return stageReadings.length ? stageReadings[stageReadings.length-1].temp : (t.temp!=null?t.temp:'');
+        })()}" disabled placeholder="from log" style="color:var(--muted);background:var(--bg);">
       </div>
     </div>
 
@@ -2736,9 +2738,12 @@ function addGravityLog(tankId) {
   const tank = state.tanks.find(x=>x.id===tankId);
   state.gravityLogs[tankId].push({ date, plato, temp, note, stage: tank?.stage||null });
   state.gravityLogs[tankId].sort((a,b)=>a.date.localeCompare(b.date));
-  // Update tank's current gravity
+  // Update tank's current gravity and temp
   const i = state.tanks.findIndex(x=>x.id===tankId);
-  if (i>=0) state.tanks[i].gravity = plato;
+  if (i>=0) {
+    state.tanks[i].gravity = plato;
+    if (temp!=null) state.tanks[i].temp = temp;
+  }
   saveState();
   openTankDetail(tankId); // refresh modal
 }
