@@ -1159,7 +1159,12 @@ function openBrewLog(id) {
   renderContent();
 }
 
-function saveBrewEdits(id) {
+function saveBrewEdits(id, btnEl) {
+  // Hide the button immediately on click — belt-and-suspenders against any
+  // timing gap before the full re-render catches up (e.g. a background
+  // sync landing in between), which was making it look like the button
+  // needed a second click to disappear.
+  if (btnEl) btnEl.style.display = 'none';
   saveState();
   window._brewEditMode = false;
   renderContent();
@@ -1634,7 +1639,7 @@ function renderBrewDetail(id) {
         ${viewingInProgress?`<button class="btn btn-ghost btn-sm" onclick="printBrewDayWorksheet(${id})">🖨️ Print Worksheet</button>`:''}
         ${isCompleted?`<button class="btn btn-ghost btn-sm" onclick="window._brewEditMode=!window._brewEditMode;renderContent()">
           ${window._brewEditMode?'✕ Cancel Edit':'✏️ Edit'}</button>`:''}
-        ${isCompleted&&window._brewEditMode?`<button class="btn btn-primary" onclick="saveBrewEdits(${id})">💾 Save Changes</button>`:''}
+        ${isCompleted&&window._brewEditMode?`<button class="btn btn-primary" onclick="saveBrewEdits(${id},this)">💾 Save Changes</button>`:''}
         ${isDraft?`<button class="btn btn-primary" onclick="startBrew(${id})">▶ Start Brew</button>`:''}
         ${isInProgress&&!log.inventoryDeducted?`<button class="btn btn-green" onclick="completeBrew(${id})">✓ Complete & Deduct Stock</button>`:''}
         ${isInProgress&&log.inventoryDeducted?`<button class="btn btn-green" onclick="completeBrewNoDeduct(${id})">✓ Mark Complete</button>`:''}
