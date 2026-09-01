@@ -4414,7 +4414,8 @@ function renderBeerInv() {
               </td>
               <td style="color:var(--muted);">—</td>
               <td style="white-space:nowrap;">
-                <button class="btn btn-ghost btn-sm" onclick="openEditBeerInvBatch(${ii},${bi})">✏️</button>
+                <button class="btn btn-ghost btn-sm" onclick="openRecordWastage(${ii},${bi})" title="Record wastage (e.g. yeast sediment drained before shipping)">💧</button>
+                <button class="btn btn-ghost btn-sm" onclick="openEditBeerInvBatch(${ii},${bi})" style="margin-left:2px;">✏️</button>
                 <button class="btn btn-ghost btn-sm" onclick="deleteBeerInvBatch(${ii},${bi})" style="margin-left:2px;">🗑</button>
               </td>
             </tr>`).join('') +
@@ -4471,6 +4472,29 @@ function renderBeerInv() {
         <div id="consumed-content" style="overflow-y:auto;max-height:60vh;"></div>
         <div class="modal-actions">
           <button class="btn btn-ghost" onclick="document.getElementById('consumed-modal').style.display='none'">Close</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Record Wastage Modal -->
+    <div id="wastage-modal" class="modal-overlay" style="display:none;" onclick="if(event.target===this)document.getElementById('wastage-modal').style.display='none'">
+      <div class="modal-box" style="max-width:420px;">
+        <div class="modal-title">Record Wastage</div>
+        <input type="hidden" id="wm-orig-beer">
+        <input type="hidden" id="wm-orig-batchno">
+        <div id="wm-info" style="font-size:14px;color:var(--muted);margin-bottom:16px;"></div>
+        <div class="form-group">
+          <label class="lbl">Litres Wasted</label>
+          <input class="inp" id="wm-qty" type="number" step="0.1" placeholder="e.g. 2">
+          <div style="font-size:11px;color:var(--muted);margin-top:4px;">e.g. yeast sediment drained before shipping. This reduces the cold room stock AND the batch's total Actual Volume.</div>
+        </div>
+        <div class="form-group">
+          <label class="lbl">Reason (optional)</label>
+          <input class="inp" id="wm-reason" placeholder="e.g. Sediment drained before dispatch">
+        </div>
+        <div class="modal-actions">
+          <button class="btn btn-ghost" onclick="document.getElementById('wastage-modal').style.display='none'">Cancel</button>
+          <button class="btn btn-primary" onclick="confirmRecordWastage()">Record Wastage</button>
         </div>
       </div>
     </div>
@@ -4641,6 +4665,71 @@ function deleteBeerInvBatch(ii, bi) {
   state.beerInventory[invIdx].batches.splice(batchIdx, 1);
   if (!state.beerInventory[invIdx].batches.length) state.beerInventory.splice(invIdx, 1);
   saveState(); renderContent(); toast('Removed');
+}
+
+function openRecordWastage(ii, bi) {
+  const inv = state.beerInventory[ii];
+  const b = inv && inv.batches[bi];
+  if (!inv || !b) { toast('That batch no longer exists.', false); return; }
+  document.getElementById('wm-orig-beer').value = inv.beer;
+  document.getElementById('wm-orig-batchno').value = b.batchNo || '';
+  document.getElementById('wm-info').innerHTML = `<strong>${beerName(inv.beer)}</strong> — Batch ${b.batchNo||'—'}<br>Current cold room stock: <strong>${b.litres||0}L</strong>`;
+  document.getElementById('wm-qty').value = '';
+  document.getElementById('wm-reason').value = '';
+  document.getElementById('wastage-modal').style.display = 'flex';
+}
+
+function confirmRecordWastage() {
+  const beer = document.getElementById('wm-orig-beer').value;
+  const batchNo = document.getElementById('wm-orig-batchno').value;
+  const qty = +document.getElementById('wm-qty').value;
+  const reason = document.getElementById('wm-reason').value.trim();
+  if (!qty || qty <= 0) { toast('Enter a valid wastage quantity', false); return; }
+
+  // Resolve fresh by stable key (beer + batchNo), not a stale index —
+  // protects against a background sync reordering the array since the
+  // modal was opened.
+  const invIdx = state.beerInventory.findIndex(x=>x.beer===beer);
+  if (invIdx < 0) { toast('That batch no longer exists — please refresh and try again.', false); document.getElementById('wastage-modal').style.display='none'; renderContent(); return; }
+  const batchIdx = state.beerInventory[invIdx].batches.findIndex(b=>b.batchNo===batchNo);
+  if (batchIdx < 0) { toast('That batch no longer exists — please refresh and try again.', false); document.getElementById('wastage-modal').style.display='none'; renderContent(); return; }
+
+  const b = state.beerInventory[invIdx].batches[batchIdx];
+  const applied = Math.min(qty, b.litres||0); // never take more than what's actually there
+  b.litres = Math.max(0, Math.round(((b.litres||0) - applied)*1000)/1000);
+  if (reason) b.wastageNote = ((b.wastageNote?b.wastageNote+'; ':'')+`${applied}L wasted (${reason}) on ${new Date().toLocaleDateString('en-IN')}`);
+
+  // This is a permanent reduction in the batch's total volume — not a
+  // dispatch — so it also reduces the linked brew log's Actual Volume,
+  // which then pushes the corrected "Litres Brewed" to bar order.
+  const linkedLog = state.brewLogs.find(log =>
+    log.status==='Completed' && log.beer===beer &&
+    String(log.batchNo||'').replace(/^0+/,'')===String(batchNo||'').replace(/^0+/,'')
+  );
+  if (linkedLog) {
+    const li = state.brewLogs.findIndex(l=>l.id===linkedLog.id);
+    const newActualVol = Math.max(0, Math.round(((state.brewLogs[li].actualVol!=null?state.brewLogs[li].actualVol:0) - applied)*1000)/1000);
+    state.brewLogs[li].actualVol = newActualVol;
+
+    // Keep the linked tank's batch size consistent too, if it's still tracking this batch
+    const tankId = linkedLog.tank || linkedLog.execution?.fvTank || null;
+    const tank = tankId ? state.tanks.find(t=>t.id===tankId) : null;
+    if (tank && tank.beer===beer && String(tank.batchNo||'').replace(/^0+/,'')===String(batchNo||'').replace(/^0+/,'')) {
+      const ti = state.tanks.findIndex(t=>t.id===tankId);
+      state.tanks[ti].batchVol = newActualVol;
+    }
+
+    // Push corrected total straight to bar order's Litres Brewed
+    let stripped = String(batchNo||'');
+    if (stripped.toUpperCase().startsWith(beer.toUpperCase())) stripped = stripped.slice(beer.length);
+    pushBatchSizeCorrection(beer, stripped, newActualVol);
+  } else {
+    toast('Wastage recorded on cold room stock, but no matching brew log was found to correct Actual Volume.', false);
+  }
+
+  document.getElementById('wastage-modal').style.display = 'none';
+  saveState(); renderContent();
+  toast(`${applied}L wastage recorded for ${beerName(beer)} batch ${batchNo}`);
 }
 
 
