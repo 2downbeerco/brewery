@@ -1170,6 +1170,8 @@ function renderBrewDetail(id) {
   const log = state.brewLogs.find(b=>b.id===id);
   if (!log) { window._openBrewId=null; return renderBrewList(); }
 
+  const stageColors = { Fermenting:'#2563EB', Conditioning:'#7C3AED', Carbonating:'#0EA5E9', Ready:'#16A34A', Empty:'#9CA3AF', Completed:'#16A34A' };
+
   const isDraft      = log.status==='Draft';
   const isInProgress = log.status==='In Progress';
   const isCompleted  = log.status==='Completed';
@@ -2441,6 +2443,44 @@ function renderTanks() {
       </div>
     </div>
 
+    <!-- Transfer to Another Tank Modal -->
+    <div id="transfer-tank-modal" class="modal-overlay" style="display:none;" onclick="if(event.target===this)this.style.display='none'">
+      <div class="modal-box" style="max-width:440px;">
+        <div class="modal-title">Transfer to Another Tank</div>
+        <input type="hidden" id="ttt-source-id">
+        <div id="ttt-info" style="font-size:14px;color:var(--muted);margin-bottom:16px;"></div>
+        <div class="form-group">
+          <label class="lbl">Destination Tank</label>
+          <select class="inp" id="ttt-dest-tank">
+            <option value="">— select —</option>
+          </select>
+        </div>
+        <div class="form-row form-row-2">
+          <div class="form-group">
+            <label class="lbl">Destination Stage</label>
+            <select class="inp" id="ttt-dest-stage">
+              <option>Fermenting</option>
+              <option selected>Conditioning</option>
+              <option>Carbonating</option>
+              <option>Ready</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="lbl">Volume Transferred (L)</label>
+            <input class="inp" id="ttt-volume" type="number" step="0.1">
+          </div>
+        </div>
+        <div style="font-size:11px;color:var(--muted);margin-top:-6px;margin-bottom:12px;">Enter how much shows up in the destination tank — the difference from the source tank's current volume corrects the batch's Actual Volume (wastage or surplus).</div>
+        <div style="font-size:12px;color:var(--muted);background:var(--bg);border-radius:8px;padding:10px 12px;">
+          The source tank will become <strong>Empty</strong>, and its gravity/temp log will carry over to the destination tank.
+        </div>
+        <div class="modal-actions">
+          <button class="btn btn-ghost" onclick="document.getElementById('transfer-tank-modal').style.display='none'">Cancel</button>
+          <button class="btn btn-primary" onclick="confirmTransferToTank()">Transfer</button>
+        </div>
+      </div>
+    </div>
+
     <!-- Add/Edit Tank Modal -->
     <div id="tank-modal" class="modal-overlay" style="display:none;" onclick="if(event.target===this)closeTankModal()">
       <div class="modal-box">
@@ -2632,10 +2672,13 @@ function openTankDetail(id) {
     ${gravitySection}
     ${carbonationSection}
 
-    ${isReady && t.beer && t.vol > 0 ? `
-    <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--border);">
-      <button class="btn btn-primary" style="width:100%;" onclick="openTransferToColdRoom('${id}')">
+    ${t.beer && t.vol > 0 ? `
+    <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--border);display:flex;gap:8px;flex-wrap:wrap;">
+      ${isReady ? `<button class="btn btn-primary" style="flex:1;min-width:180px;" onclick="openTransferToColdRoom('${id}')">
         🧊 Transfer Batch to Cold Room
+      </button>` : ''}
+      <button class="btn btn-ghost" style="flex:1;min-width:180px;" onclick="openTransferToTank('${id}')">
+        🔄 Transfer to Another Tank
       </button>
     </div>` : ''}
   `;
@@ -2720,6 +2763,117 @@ function confirmTransferToColdRoom() {
   showArchivePrompt(tankId, t, newObj);
 
   toast(`${vol}L transferred to cold room`);
+}
+
+function openTransferToTank(tankId) {
+  const t = state.tanks.find(x=>x.id===tankId);
+  if (!t) return;
+  let batchNo = t.batchNo || '';
+  if (t.beer && batchNo.toUpperCase().startsWith(t.beer.toUpperCase())) batchNo = batchNo.slice(t.beer.length);
+  document.getElementById('ttt-info').innerHTML = `<strong>${beerName(t.beer)}</strong> — Batch ${batchNo||'—'}<br>Current tank volume: <strong>${t.vol}L</strong> (in ${t.name})`;
+  document.getElementById('ttt-source-id').value = tankId;
+  document.getElementById('ttt-volume').value = t.vol;
+  document.getElementById('ttt-dest-stage').value = 'Conditioning';
+  const destOpts = state.tanks.filter(x => x.id !== tankId && (!x.beer || x.stage === 'Empty'));
+  document.getElementById('ttt-dest-tank').innerHTML = '<option value="">— select —</option>' +
+    destOpts.map(x=>`<option value="${x.id}">${x.name} (${x.cap}L)</option>`).join('');
+  document.getElementById('transfer-tank-modal').style.display = 'flex';
+}
+
+function confirmTransferToTank() {
+  const sourceId = document.getElementById('ttt-source-id').value;
+  const destId = document.getElementById('ttt-dest-tank').value;
+  const destStage = document.getElementById('ttt-dest-stage').value;
+  const vol = +document.getElementById('ttt-volume').value;
+
+  if (!destId) { toast('Select a destination tank', false); return; }
+  if (!vol || vol <= 0) { toast('Enter a valid volume', false); return; }
+
+  const si = state.tanks.findIndex(x=>x.id===sourceId);
+  const di = state.tanks.findIndex(x=>x.id===destId);
+  if (si<0 || di<0) return;
+  const source = state.tanks[si];
+
+  document.getElementById('transfer-tank-modal').style.display = 'none';
+
+  // Correct for wastage/surplus during transfer — same formula as Transfer to Cold Room
+  const diff = vol - (source.vol||0);
+  const correctedVol = source.batchVol ? Math.max(vol, source.batchVol + diff) : vol;
+
+  // Keep the linked brew log's Actual Volume in sync with this correction
+  let strippedBatchNo = source.batchNo || '';
+  if (source.beer && strippedBatchNo.toUpperCase().startsWith(source.beer.toUpperCase())) strippedBatchNo = strippedBatchNo.slice(source.beer.length);
+  const linkedLog = source.beer ? state.brewLogs.find(b =>
+    b.status==='Completed' && b.beer===source.beer &&
+    String(b.batchNo||'').replace(/^0+/,'')===String(source.batchNo||'').replace(/^0+/,'')
+  ) : null;
+  if (linkedLog) {
+    const li = state.brewLogs.findIndex(b=>b.id===linkedLog.id);
+    state.brewLogs[li].actualVol = correctedVol;
+    state.brewLogs[li].tank = destId; // batch now lives in the destination tank
+  }
+
+  // Carry the gravity/temp log over to the destination tank rather than
+  // archiving it — the batch isn't done, it's just relocating.
+  const sourceLog = state.gravityLogs[sourceId] || [];
+  state.gravityLogs[destId] = [...(state.gravityLogs[destId]||[]), ...sourceLog];
+  state.gravityLogs[sourceId] = [];
+
+  // Set up the destination tank with the batch
+  state.tanks[di] = {
+    ...state.tanks[di],
+    beer: source.beer,
+    batchNo: source.batchNo,
+    vol: vol,
+    batchVol: correctedVol,
+    stage: destStage,
+    since: source.since, // preserve original brew date for continuity
+    temp: source.temp,
+    carbonationVol: null,
+    carbonationDate: null,
+    readyDate: null,
+  };
+
+  // Clear the source tank — becomes Empty, ready for the next brew.
+  // Zeroed immediately (not just stage-flagged) to avoid the same transient
+  // double-count issue fixed for Transfer to Cold Room.
+  state.tanks[si] = {
+    ...source,
+    stage: 'Empty',
+    beer: null,
+    batchNo: null,
+    vol: 0,
+    batchVol: null,
+    since: null,
+    temp: null,
+    carbonationVol: null,
+    carbonationDate: null,
+    readyDate: null,
+  };
+
+  saveState();
+
+  // Push the corrected batch size to bar order directly for immediate consistency
+  if (source.beer) pushBatchSizeCorrection(source.beer, strippedBatchNo, correctedVol);
+
+  // If this batch was already visible in bar order (had been Ready before),
+  // and the destination stage isn't Ready, computeBreweryBeers() won't
+  // include it in this sync cycle — leaving bar order's record still
+  // pointing at the now-empty source tank, which its own deactivation
+  // check would then wrongly mark inactive. Fix the tank reference directly
+  // so that never happens, regardless of the destination stage.
+  if (source.stage === 'Ready' && destStage !== 'Ready' && source.beer) {
+    queueBreweryBeersUpdate((current) => {
+      const idx = current.findIndex(b => b.beer===source.beer && String(b.batch).replace(/^0+/,'')===String(strippedBatchNo).replace(/^0+/,''));
+      if (idx<0 || current[idx].inactive) return null;
+      current[idx].tankId = destId;
+      current[idx].tankName = state.tanks[di].name;
+      return current;
+    }, `relinking ${source.beer} batch ${strippedBatchNo} to new tank`);
+  }
+
+  closeTankDetail();
+  toast(`${vol}L transferred from ${source.name} to ${state.tanks[di].name}`);
 }
 
 async function pushBatchSizeCorrection(beer, batch, correctBatchVol) {
