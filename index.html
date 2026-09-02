@@ -4203,6 +4203,12 @@ function renderPOItems(){
   document.getElementById('po-items-list').innerHTML = rmDatalist + _poItems.map((item,idx)=>{
     const isMalt = (item.category||'Malt') === 'Malt';
     const isHops = (item.category||'') === 'Hops';
+    // A genuinely new item (name doesn't match anything already in Raw
+    // Materials) needs a reorder threshold set somewhere — there's no
+    // other point in the flow to enter it, since the item won't exist yet
+    // until this PO is saved.
+    const trimmedName = (item.name||'').trim();
+    const isNewItem = trimmedName !== '' && !state.rawMaterials.some(r=>r.name.toLowerCase()===trimmedName.toLowerCase());
     const extraField = isMalt
       ? `<div class="form-group" style="margin:0;">
            <label class="lbl" style="font-size:10px;">Extract LDK</label>
@@ -4216,13 +4222,20 @@ function renderPOItems(){
              oninput="_poItems[${idx}].alphaAcid=+this.value">
          </div>`
       : `<div></div>`;
+    const reorderField = isNewItem
+      ? `<div class="form-group" style="margin:0;">
+           <label class="lbl" style="font-size:10px;">Reorder At <span style="font-weight:400;color:var(--muted);">(new item)</span></label>
+           <input class="inp inp-sm" type="number" step="0.1" value="${item.reorder||''}" placeholder="e.g. 20"
+             oninput="_poItems[${idx}].reorder=+this.value">
+         </div>`
+      : '';
     return `
     <div style="border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:10px;">
       <!-- Row 1: main fields -->
       <div style="display:grid;grid-template-columns:1.8fr 1fr 90px 90px 80px 80px 28px;gap:6px;align-items:center;margin-bottom:8px;">
         <input class="inp inp-sm" value="${item.name||''}" placeholder="Type or pick existing item"
-          list="rm-names-list"
-          oninput="_poItems[${idx}].name=this.value;autofillPOItem(${idx},this.value)">
+          list="rm-names-list" data-was-new="${isNewItem}"
+          oninput="_poItems[${idx}].name=this.value;autofillPOItem(${idx},this.value);handlePOItemNameInput(${idx},this)">
         <select class="inp inp-sm" id="po-cat-${idx}" onchange="_poItems[${idx}].category=this.value;renderPOItems()">
           ${catOpts.replace(`value="${item.category||'Malt'}"`,`value="${item.category||'Malt'}" selected`)}
         </select>
@@ -4237,8 +4250,8 @@ function renderPOItems(){
           oninput="_poItems[${idx}].gst=+this.value;updatePOTotals()">
         <button class="del-btn" onclick="removePOItem(${idx})">✕</button>
       </div>
-      <!-- Row 2: batch no + category-specific field + subtotal -->
-      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;align-items:end;">
+      <!-- Row 2: batch no + category-specific field + reorder (new items only) + subtotal -->
+      <div style="display:grid;grid-template-columns:${isNewItem?'1fr 1fr 1fr 1fr':'1fr 1fr 1fr'};gap:8px;align-items:end;">
         <div class="form-group" style="margin:0;">
           <label class="lbl" style="font-size:10px;">Batch No.</label>
           <input class="inp inp-sm" value="${item.batchNo||''}" placeholder="e.g. B2025-06"
@@ -4251,6 +4264,17 @@ function renderPOItems(){
       </div>
     </div>`;
   }).join('');
+}
+
+// Re-renders the item row ONLY when whether it's "a new item" (needing a
+// Reorder field) has actually flipped since the last render — not on every
+// keystroke, which would reset the input's cursor position on every
+// character typed.
+function handlePOItemNameInput(idx, inputEl) {
+  const trimmedName = (_poItems[idx].name||'').trim();
+  const isNewItem = trimmedName !== '' && !state.rawMaterials.some(r=>r.name.toLowerCase()===trimmedName.toLowerCase());
+  const wasNew = inputEl.dataset.wasNew === 'true';
+  if (isNewItem !== wasNew) renderPOItems();
 }
 
 function autofillPOItem(idx, typedName) {
@@ -4333,7 +4357,7 @@ function savePO(){
     if(i<0){
       const newRM={
         id:state.nextRMId++, name, category:item.category||'Other',
-        unit:item.unit||'kg', stock:0, reorder:0, lastCost:0, batches:[]
+        unit:item.unit||'kg', stock:0, reorder:item.reorder||0, lastCost:0, batches:[]
       };
       state.rawMaterials.push(newRM);
       i=state.rawMaterials.length-1;
