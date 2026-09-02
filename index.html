@@ -685,10 +685,11 @@ function renderNav() {
 
 function switchTab(id) {
   closeMobileNav();
-  // Reset the open brew detail view when leaving the Brew Log tab, so
-  // navigating away and back shows the tab's main list, not whatever
-  // individual brew was last open.
-  if (currentTab === 'brew_log' && id !== 'brew_log') {
+  // Reset the open brew detail view whenever the Brew Log tab is (re)entered
+  // — either navigating away and back, or clicking "Brew Log" again while a
+  // specific brew is already open. Either way it should return to the main
+  // list, not stay on whatever individual brew was last open.
+  if (id === 'brew_log' && (currentTab !== 'brew_log' || window._openBrewId)) {
     window._openBrewId = null;
     window._brewViewTab = null;
   }
