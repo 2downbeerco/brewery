@@ -3912,7 +3912,24 @@ function saveRM(){
 }
 function deleteRM(){
   const id=+document.getElementById('rmm-id').value;
-  if(!confirm('Delete this item and all its batches?'))return;
+  const r = state.rawMaterials.find(x=>x.id===id);
+  const rmName = r?.name || 'this item';
+
+  // Check for references from active (not yet Completed) brew logs — these
+  // are recipes/brews still in progress that would be left with a dangling
+  // ingredient reference if this item disappears out from under them.
+  const referencingLogs = state.brewLogs.filter(log => {
+    if (log.status === 'Completed') return false;
+    const allIngs = [...(log.grains||[]),...(log.hops||[]),...(log.yeast||[]),...(log.other||[]),...(log.boilAdd||[])];
+    return allIngs.some(ing => ing.rmId == id);
+  });
+
+  let msg = `Delete "${rmName}" and all its batches?`;
+  if (referencingLogs.length) {
+    const names = referencingLogs.map(l => `${beerName(l.beer)}${l.batchNo?' (Batch '+l.batchNo+')':''}`).join(', ');
+    msg = `"${rmName}" is used in ${referencingLogs.length} active recipe${referencingLogs.length!==1?'s':''} that ${referencingLogs.length!==1?'haven\'t':'hasn\'t'} been completed yet: ${names}.\n\nDeleting it will leave those ingredient entries unable to resolve a batch. Delete anyway?`;
+  }
+  if(!confirm(msg))return;
   state.rawMaterials=state.rawMaterials.filter(x=>x.id!==id);
   saveState();closeRMModal();renderContent();toast('Deleted');
 }
@@ -4076,9 +4093,12 @@ function applyAdj(){
   const i=state.rawMaterials.findIndex(x=>x.id===id);if(i<0)return;
   const r=state.rawMaterials[i];
   const isMalt=r.category==='Malt';
-  // Apply to last batch (FIFO would be ideal but keep simple for now)
+  // Apply to most recent batch by delivery date — matches the convention
+  // already used by Stock Take, rather than whichever batch happens to be
+  // last in array order (which isn't always the most recently delivered).
   if(!r.batches||!r.batches.length){toast('No batches to adjust',false);return;}
-  const lastBatch=r.batches[r.batches.length-1];
+  const sortedBatches = [...r.batches].sort((a,b)=>(b.deliveryDate||'').localeCompare(a.deliveryDate||''));
+  const lastBatch=sortedBatches[0];
   function adj(cur,t,q){return t==='add'?Math.round((cur+q)*1000)/1000:t==='sub'?Math.max(0,Math.round((cur-q)*1000)/1000):q;}
   if(isMalt){
     if(loc==='warehouse') lastBatch.warehouseQty=adj(lastBatch.warehouseQty||0,type,qty);
@@ -4431,7 +4451,7 @@ function renderActiveStockTake(st) {
               <td>
                 <input class="inp inp-sm" type="number" step="0.01" value="${actual}" placeholder="count"
                   style="width:100px;"
-                  oninput="updateSTLine(${st.id},${idx},+this.value)">
+                  oninput="updateSTLine(${st.id},${line.rmId},+this.value)">
               </td>
               <td style="font-weight:600;color:${varColor};">${varText}</td>
               <td style="font-size:13px;color:var(--red);">${lossVal>0?'₹'+lossVal.toFixed(2):'—'}</td>
@@ -4465,9 +4485,11 @@ function updateStockTakeField(id, field, val) {
   if(st) { st[field]=val; saveState(); }
 }
 
-function updateSTLine(stId, idx, val) {
+function updateSTLine(stId, rmId, val) {
   const st = state.stockTakes.find(s=>s.id===stId);
   if(!st) return;
+  const idx = st.lines.findIndex(l=>l.rmId===rmId);
+  if (idx<0) return;
   st.lines[idx].actual = val;
   st.lines[idx].variance = val - st.lines[idx].expected;
   saveState();
