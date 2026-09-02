@@ -203,33 +203,15 @@
     /* Delete/remove buttons in ingredient rows shouldn't take a full row alone */
     .brew-detail .del-btn { width: fit-content; align-self: flex-end; }
 
-    /* Beer Inventory tables: fixed narrow percentage columns are unusable
-       on a phone screen (beer names, dates, and action buttons all get
-       squeezed to ~50px). Transform each row into a labeled card instead
-       of a horizontally-scrolling strip. */
-    .beer-inv-tbl { table-layout: auto !important; }
-    .beer-inv-tbl thead { display: none; }
-    .beer-inv-tbl, .beer-inv-tbl tbody, .beer-inv-tbl tr, .beer-inv-tbl td { display: block; width: auto !important; }
-    .beer-inv-tbl tr:not(.tbl-plain-row) {
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 10px 12px;
-      margin-bottom: 8px;
-      background: var(--surface);
-    }
-    .beer-inv-tbl tr.tbl-plain-row { border: none; margin-bottom: 4px; padding: 0; }
-    .beer-inv-tbl td { border-bottom: none; padding: 4px 0; }
-    .beer-inv-tbl td[data-label]:not([data-label=""])::before {
-      content: attr(data-label);
-      display: block;
-      font-size: 10px;
-      font-weight: 700;
-      color: var(--muted);
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-      margin-bottom: 2px;
-    }
-    .beer-inv-tbl td[data-label=""] { padding-top: 8px; border-top: 1px solid var(--border); margin-top: 4px; }
+    /* Beer Inventory tables: keep the table/column layout on mobile rather
+       than stacking into cards — just make it compact enough to fit.
+       Smaller font and padding throughout, "Since" hidden (least critical
+       column), and Location text shortened. Anything that still doesn't
+       fit falls back to horizontal scroll via .tbl-wrap. */
+    .beer-inv-tbl { font-size: 12px; table-layout: auto !important; }
+    .beer-inv-tbl th, .beer-inv-tbl td { padding: 6px 4px !important; width: auto !important; }
+    .beer-inv-tbl .col-since { display: none; }
+    .beer-inv-tbl .beer-dot { width: 8px; height: 8px; }
   }
   @media (min-width: 701px) {
     #menu-btn { display: none !important; }
@@ -4621,7 +4603,7 @@ function renderBeerInv() {
       <div class="tbl-wrap"><table class="tbl beer-inv-tbl" style="table-layout:fixed;width:100%;">
         <colgroup><col style="width:26%"><col style="width:15%"><col style="width:15%"><col style="width:15%"><col style="width:15%"><col style="width:14%"></colgroup>
         <thead><tr>
-          <th>Beer</th><th>Batch No.</th><th>Location</th><th>Volume</th><th>Since</th><th></th>
+          <th>Beer</th><th>Batch No.</th><th>Location</th><th>Volume</th><th class="col-since">Since</th><th></th>
         </tr></thead>
         <tbody>
           <!-- Cold room rows -->
@@ -4636,7 +4618,7 @@ function renderBeerInv() {
                 <span style="font-size:14px;font-weight:600;" title="Volume can only be changed via Transfer to Cold Room, Record Wastage, or keg assignment in the bar order app">${b.litres||0}</span>
                 <span style="font-size:12px;color:var(--muted);margin-left:2px;">L</span>
               </td>
-              <td data-label="Since" style="color:var(--muted);">—</td>
+              <td data-label="Since" class="col-since" style="color:var(--muted);">—</td>
               <td data-label="" style="white-space:nowrap;padding-left:6px;padding-right:6px;">
                 <button class="btn btn-ghost btn-sm" onclick="openRecordWastage(${ii},${bi})" title="Record wastage (e.g. yeast sediment drained before shipping)" style="padding:5px 7px;">💧</button>
                 <button class="btn btn-ghost btn-sm" onclick="deleteBeerInvBatch(${ii},${bi})" style="padding:5px 7px;margin-left:1px;">🗑</button>
@@ -4658,7 +4640,7 @@ function renderBeerInv() {
               <td data-label="Batch No."><span style="font-family:monospace;font-weight:600;color:var(--accent);">${batchNo}</span></td>
               <td data-label="Location" style="color:var(--muted);font-size:12px;"><svg width="12" height="15" viewBox="0 0 64 124" fill="none" xmlns="http://www.w3.org/2000/svg" style="vertical-align:middle;margin-right:4px;color:var(--muted);"><line x1="22" y1="108" x2="16" y2="120" stroke="currentColor" stroke-width="4" stroke-linecap="round"/><line x1="42" y1="108" x2="48" y2="120" stroke="currentColor" stroke-width="4" stroke-linecap="round"/><line x1="12" y1="120" x2="20" y2="120" stroke="currentColor" stroke-width="3" stroke-linecap="round"/><line x1="44" y1="120" x2="52" y2="120" stroke="currentColor" stroke-width="3" stroke-linecap="round"/><polygon points="9.5,88 54.5,88 32,108" fill="currentColor" opacity="0.5"/><rect x="9.5" y="22" width="45" height="66" fill="currentColor" opacity="0.25"/><rect x="9.5" y="22" width="45" height="66" stroke="currentColor" stroke-width="3"/><path d="M9.5 22 Q9.5 4 32 4 Q54.5 4 54.5 22" fill="currentColor" opacity="0.4" stroke="currentColor" stroke-width="3"/><ellipse cx="32" cy="22" rx="22.5" ry="5" fill="currentColor" opacity="0.6"/><rect x="28" y="108" width="8" height="6" rx="1" fill="currentColor"/></svg>${t.name}</td>
               <td data-label="Volume"><strong>${t.vol}L</strong></td>
-              <td data-label="Since" style="color:var(--muted);">${fmtDate(t.since)}</td>
+              <td data-label="Since" class="col-since" style="color:var(--muted);">${fmtDate(t.since)}</td>
               <td data-label=""></td>
             </tr>`;}).join('')}
         </tbody>
