@@ -3526,7 +3526,7 @@ function renderRMInventory() {
         <div class="form-group"><label class="lbl">Item Name</label><input class="inp" id="rmm-name"></div>
         <div class="form-row form-row-3">
           <div class="form-group"><label class="lbl">Category</label>
-            <select class="inp" id="rmm-cat">
+            <select class="inp" id="rmm-cat" onchange="autoSetRMUnit()">
               <option>Malt</option><option>Hops</option><option>Yeast</option><option>Salts++</option><option>Adjuncts</option><option>Gases</option><option>Cleaning</option><option>Other</option>
             </select>
           </div>
@@ -3866,6 +3866,17 @@ function toggleRMExpand(id) {
   renderContent();
 }
 function setRMFilter(f){window._rmFilter=f;window._rmExpanded=null;renderContent();}
+
+// Auto-fills the standard unit for a category — only when the unit field
+// is currently empty (adding a new item), so it never silently overwrites
+// an existing item's unit while editing.
+function autoSetRMUnit() {
+  const unitEl = document.getElementById('rmm-unit');
+  if (unitEl.value.trim() !== '') return;
+  const cat = document.getElementById('rmm-cat').value;
+  const defaults = { Malt: 'kg', Hops: 'g', Yeast: 'g', 'Salts++': 'g' };
+  if (defaults[cat]) unitEl.value = defaults[cat];
+}
 
 function openAddRM(){
   document.getElementById('rm-modal-title').textContent='Add Item';
