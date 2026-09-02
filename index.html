@@ -703,12 +703,21 @@ function stageBadge(stage) {
   return `<span class="badge ${map[stage]||'badge-gray'}">${stage}</span>`;
 }
 function rmStatus(item) {
-  // Total is always sum of all batches
+  // Total is always sum of all ACTIVE batches. Any batch whose remaining
+  // qty has hit zero — from any deduction path (brew completion, PO edit,
+  // filtration wastage, manual adjust) — gets marked inactive here rather
+  // than in every individual deduction function, since rmStatus() already
+  // runs after every one of them.
   let total = 0;
   if (item.batches && item.batches.length) {
     item.batches.forEach(b => {
-      if (item.category==='Malt') total += (b.warehouseQty||0)+(b.breweryQty||0);
-      else total += (b.qty||0);
+      const qty = item.category==='Malt' ? (b.warehouseQty||0)+(b.breweryQty||0) : (b.qty||0);
+      if (qty <= 0) {
+        b.inactive = true;
+      } else {
+        b.inactive = false;
+        total += qty;
+      }
     });
   } else {
     // fallback for legacy records
@@ -3451,7 +3460,8 @@ function renderRMInventory() {
     <div class="card" style="padding:0;overflow:hidden;">
       ${items.map((r,ri)=>{
         const {pct,low,critical,color,total}=rmStatus(r);
-        const batches = r.batches||[];
+        const batches = (r.batches||[]).filter(b=>!b.inactive);
+        const inactiveBatches = (r.batches||[]).filter(b=>b.inactive);
         const totalColor = isAll?(critical?'var(--red)':low?'var(--orange)':'var(--text)'):'var(--text)';
         const uid = r.id!=null ? String(r.id) : r.name;
         const expanded = window._rmExpanded!=null && window._rmExpanded===uid;
@@ -3494,7 +3504,9 @@ function renderRMInventory() {
                 <th></th>
               </tr></thead>
               <tbody>
-                ${batches.map((b,bi)=>`<tr>
+                ${batches.map((b)=>{
+                  const bi = r.batches.indexOf(b); // true index into r.batches, since `batches` above is filtered
+                  return `<tr>
                   <td><strong>${b.batchNo||'—'}</strong></td>
                   ${isMaltTab?`<td>${b.warehouseQty||0} ${r.unit}</td><td>${b.breweryQty||0} ${r.unit}</td>`:`<td>${b.qty||0} ${r.unit}</td>`}
                   ${isMaltTab?`<td>${b.extractLdk!=null?b.extractLdk:'—'}</td>`:''}
@@ -3506,13 +3518,30 @@ function renderRMInventory() {
                     <button class="btn btn-ghost btn-sm" onclick="openEditBatch(${r.id},${bi})">✏️</button>
                     <button class="btn btn-ghost btn-sm" onclick="deleteBatch(${r.id},${bi})" style="margin-left:4px;">🗑</button>
                   </td>
-                </tr>`).join('')}
+                </tr>`;}).join('')}
               </tbody>
             </table></div>`}
 
             ${isMaltTab&&batches.length?`
             <div style="margin-top:8px;font-size:12px;color:var(--muted);">
               Total: Warehouse <strong>${batches.reduce((s,b)=>s+(b.warehouseQty||0),0)} ${r.unit}</strong> · Brewery <strong>${batches.reduce((s,b)=>s+(b.breweryQty||0),0)} ${r.unit}</strong>
+            </div>`:''}
+
+            ${inactiveBatches.length?`
+            <div style="margin-top:10px;">
+              <a href="#" onclick="event.preventDefault();window._rmShowConsumed=(window._rmShowConsumed===uid?null:uid);renderContent();" style="font-size:12px;color:var(--muted);text-decoration:underline;">
+                ${window._rmShowConsumed===uid?'▾':'▸'} ${inactiveBatches.length} consumed batch${inactiveBatches.length!==1?'es':''}
+              </a>
+              ${window._rmShowConsumed===uid?`
+              <div class="tbl-wrap" style="margin-top:6px;"><table class="tbl" style="font-size:12px;opacity:0.6;">
+                <tbody>
+                  ${inactiveBatches.map(b=>`<tr>
+                    <td><strong>${b.batchNo||'—'}</strong></td>
+                    <td style="color:var(--muted);">0 ${r.unit}</td>
+                    <td style="color:var(--muted);">${b.deliveryDate?fmtDate(b.deliveryDate):'—'}</td>
+                  </tr>`).join('')}
+                </tbody>
+              </table></div>`:''}
             </div>`:''}
           </div>`:''}
         </div>`;}).join('')}
