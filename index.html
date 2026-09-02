@@ -1247,7 +1247,7 @@ function renderBrewDetail(id) {
   // ── Ingredient row builder ────────────────────────────────────────────────
   function ingRows(section, items, cats) {
     const rmList = cats ? state.rawMaterials.filter(r=>cats.includes(r.category)) : state.rawMaterials;
-    const rmOpts = rmList.map(r=>`<option value="${r.id}">${r.name}</option>`).join('');
+    const rmOpts = '<option value="">— select —</option>' + rmList.map(r=>`<option value="${r.id}">${r.name}</option>`).join('');
 
     if (!canEdit && items.length===0) return '<div style="color:var(--muted);font-size:13px;">None specified</div>';
 
@@ -1318,7 +1318,7 @@ function renderBrewDetail(id) {
   // ── Hops rows with t= timing field ───────────────────────────────────────
   function ingRowsHops(section, items) {
     const rmList = state.rawMaterials.filter(r=>r.category==='Hops');
-    const rmOpts = rmList.map(r=>`<option value="${r.id}">${r.name}</option>`).join('');
+    const rmOpts = '<option value="">— select —</option>' + rmList.map(r=>`<option value="${r.id}">${r.name}</option>`).join('');
     if (!canEdit && items.length===0) return '<div style="color:var(--muted);font-size:13px;">None specified</div>';
     return items.map((ing,idx)=>{
       const rm = state.rawMaterials.find(r=>r.id==ing.rmId);
@@ -1363,7 +1363,7 @@ function renderBrewDetail(id) {
   // ── Boil additions (adjuncts added during boil) ───────────────────────────
   function ingRowsBoilAdd(section, items) {
     const rmList = state.rawMaterials.filter(r=>['Adjuncts','Salts++','Other'].includes(r.category));
-    const rmOpts = rmList.map(r=>`<option value="${r.id}" data-unit="${r.unit}">${r.name}</option>`).join('');
+    const rmOpts = '<option value="">— select from Raw Materials —</option>' + rmList.map(r=>`<option value="${r.id}" data-unit="${r.unit}">${r.name}</option>`).join('');
     if (!canEdit && items.length===0) return '<div style="color:var(--muted);font-size:13px;">None specified</div>';
     return items.map((ing,idx)=>{
       if (!canEdit) {
@@ -2028,9 +2028,11 @@ function addIng(section, hintCat) {
   const id = window._openBrewId;
   const i = state.brewLogs.findIndex(b=>b.id===id);
   if (i<0) return;
-  // pre-select first matching RM
-  const rm = hintCat ? state.rawMaterials.find(r=>r.category===hintCat) : state.rawMaterials[0];
-  state.brewLogs[i][section].push({ rmId: rm?rm.id:'', name: rm?rm.name:'', qty: 0, unit: rm?rm.unit:'' });
+  // Blank row — the brewer picks from the dropdown rather than it being
+  // pre-filled with whatever raw material happens to come first. A
+  // pre-filled row also made it look like nothing happened on the first
+  // click, since every new row displayed the exact same value.
+  state.brewLogs[i][section].push({ rmId: '', name: '', qty: 0, unit: '' });
   saveState(); renderContent();
 }
 
