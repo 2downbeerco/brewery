@@ -4301,6 +4301,19 @@ function savePO(){
     // Calculate qty delta — full qty for new PO, difference for edits
     const oldItem = oldItems.find(oi=>oi.name.trim().toLowerCase()===name.toLowerCase());
     const qtyDelta = isNew ? item.qty : item.qty - (oldItem?.qty||0);
+
+    // If this is an edit and the batch number itself changed, the RM batch
+    // is still sitting under the OLD number — rename it to the new one
+    // first, so the lookups below (by the new batchNo) actually find it,
+    // instead of silently no-op'ing or creating a disconnected duplicate.
+    if (!isNew && oldItem) {
+      const oldBatchNo = oldItem.batchNo || ('PO-'+id);
+      if (oldBatchNo !== batchNo) {
+        const oldBi = r.batches.findIndex(b=>b.batchNo===oldBatchNo);
+        if (oldBi>=0) r.batches[oldBi].batchNo = batchNo;
+      }
+    }
+
     if(qtyDelta === 0 && !isNew) {
       // No qty change — still update cost/metadata
       const bi=r.batches.findIndex(b=>b.batchNo===batchNo);
