@@ -756,7 +756,11 @@ function renderContent() {
 function renderDashboard() {
   const activeTanks = state.tanks.filter(t=>t.beer).length;
   const emptyTanks  = state.tanks.filter(t=>!t.beer).length;
-  const lowStock    = state.rawMaterials.filter(r=>r.stock<=r.reorder).length;
+  // Use rmStatus() for both freshness (recomputes total from batches,
+  // rather than trusting the possibly-stale item.stock field) and the same
+  // reorder>0 guard the Raw Materials tab uses — without that guard, items
+  // with no reorder level set (0) were incorrectly counted as low stock.
+  const lowStock    = state.rawMaterials.filter(r=>rmStatus(r).low).length;
   const validColdRoom = state.beerInventory.filter(b=>{
     const beerObj = state.beers.find(x=>x.code===b.beer);
     return beerObj && beerObj.active !== false;
