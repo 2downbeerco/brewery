@@ -4230,10 +4230,15 @@ function autofillPOItem(idx, typedName) {
   if (match) {
     _poItems[idx].category = match.category;
     _poItems[idx].unit = match.unit;
-    const catEl = document.getElementById(`po-cat-${idx}`);
-    const unitEl = document.getElementById(`po-unit-${idx}`);
-    if (catEl) catEl.value = match.category;
-    if (unitEl) unitEl.value = match.unit;
+    // Full re-render so the category-specific field (Extract LDK for Malt
+    // vs Alpha Acid for Hops, etc.) actually swaps to match the new
+    // category — patching just the dropdown values left that field stuck
+    // showing whatever it was before. Refocus the name input afterward
+    // (cursor at the end) since a full re-render replaces the DOM node
+    // the user was just typing in.
+    renderPOItems();
+    const nameEl = document.querySelector(`#po-items-list > div:nth-child(${idx+2}) input`);
+    if (nameEl) { nameEl.focus(); const v = nameEl.value; nameEl.value=''; nameEl.value=v; }
   }
 }
 
