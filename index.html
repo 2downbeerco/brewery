@@ -2152,7 +2152,6 @@ function updateBatchNo(id, newVal) {
   cascadeBatchNoChange(log.beer, oldVal, newVal, linkedTankId);
 
   saveState(); renderContent();
-  toast(`Batch number updated and synced to tank, cold room, and bar order`);
 }
 
 // A batch number correction touches FOUR separate places in the bar order
@@ -2327,7 +2326,7 @@ function updateFiltrationField(id, field, val, rmName, deductedField) {
     log[deductedField] = val;
   }
   log[field] = val;
-  saveState(); renderContent();
+  saveState();
 }
 
 // Records the actual volume that went into the fermenter (post-wastage),
@@ -2353,7 +2352,7 @@ function updateActualVolume(id, val) {
     toast('Linked tank not found — actual volume recorded, but tank could not be updated', false);
   }
 
-  saveState(); renderContent();
+  saveState();
 
   // Live link: push this value straight to bar order's "Litres Brewed"
   // (bb.litres/totalLitres) for the matching batch — Actual Volume here is
