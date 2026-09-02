@@ -2120,14 +2120,98 @@ function updateBatchNo(id, newVal) {
   toast(`Batch number updated and synced to tank, cold room, and bar order`);
 }
 
+// A batch number correction touches FOUR separate places in the bar order
+// app's data, discovered the hard way after a manual rename left three of
+// them stranded: the stock summary (__brewery_beers__), every order's
+// assignedKegs (both the top-level batch and the nested fills[].batch),
+// each individual keg record's combined beer+batch label (e.g. "BB54"),
+// and the keg dispatch history (__keg_history__). This function now
+// updates all four in one call instead of leaving the other three for
+// someone to find and patch manually later.
 async function renameBrewBatchInKegs(beer, oldBatch, newBatch) {
   if (!beer || oldBatch === newBatch) return;
-  return queueBreweryBeersUpdate((current) => {
-    const idx = current.findIndex(b => b.beer===beer && String(b.batch).replace(/^0+/,'')===String(oldBatch).replace(/^0+/,''));
+  const oldStripped = String(oldBatch).replace(/^0+/,'');
+
+  // 1. Stock summary entry
+  queueBreweryBeersUpdate((current) => {
+    const idx = current.findIndex(b => b.beer===beer && String(b.batch).replace(/^0+/,'')===oldStripped);
     if (idx<0) return null;
     current[idx].batch = newBatch;
     return current;
   }, `renaming ${beer} batch ${oldBatch} to ${newBatch}`);
+
+  // 2. Orders: assignedKegs (top-level batch + nested fills[].batch)
+  try {
+    const ordersRes = await fetch(SB_URL + '/rest/v1/orders?select=id,data', { headers: SB_HDR });
+    if (ordersRes.ok) {
+      const ordersRows = await ordersRes.json();
+      const toWrite = [];
+      ordersRows.forEach(row => {
+        const o = row.data;
+        let changed = false;
+        (o.assignedKegs||[]).forEach(a => {
+          if (a.beer===beer && String(a.batch).replace(/^0+/,'')===oldStripped) { a.batch = newBatch; changed = true; }
+          (a.fills||[]).forEach(f => {
+            if (f.beer===beer && String(f.batch).replace(/^0+/,'')===oldStripped) { f.batch = newBatch; changed = true; }
+          });
+        });
+        if (changed) toWrite.push({ id: row.id, data: o });
+      });
+      if (toWrite.length) {
+        await Promise.all(toWrite.map(u => fetch(SB_URL + '/rest/v1/orders', {
+          method: 'POST',
+          headers: { ...SB_HDR, 'Prefer': 'resolution=merge-duplicates,return=minimal' },
+          body: JSON.stringify({ id: u.id, data: u.data, updated_at: new Date().toISOString() })
+        })));
+      }
+    }
+  } catch(e) { console.error('renameBrewBatchInKegs: orders update failed', e); }
+
+  // 3. Individual keg records — combined beer+batch label (e.g. "BB54")
+  try {
+    const kegsRes = await fetch(SB_URL + '/rest/v1/kegs?select=id,data', { headers: SB_HDR });
+    if (kegsRes.ok) {
+      const kegsRows = await kegsRes.json();
+      const combinedOld = beer + oldBatch;
+      const combinedNew = beer + newBatch;
+      const toWrite = kegsRows.filter(row => !String(row.id).startsWith('__') && row.data?.beer === combinedOld);
+      if (toWrite.length) {
+        await Promise.all(toWrite.map(row => {
+          row.data.beer = combinedNew;
+          return fetch(SB_URL + '/rest/v1/kegs', {
+            method: 'POST',
+            headers: { ...SB_HDR, 'Prefer': 'resolution=merge-duplicates,return=minimal' },
+            body: JSON.stringify({ id: row.id, data: row.data, updated_at: new Date().toISOString() })
+          });
+        }));
+      }
+    }
+  } catch(e) { console.error('renameBrewBatchInKegs: kegs update failed', e); }
+
+  // 4. Keg dispatch history
+  try {
+    const khRes = await fetch(SB_URL + '/rest/v1/kegs?select=id,data&id=eq.__keg_history__', { headers: SB_HDR });
+    if (khRes.ok) {
+      const khRows = await khRes.json();
+      const kegHistory = khRows[0]?.data?.kegHistory || {};
+      let changed = false;
+      Object.keys(kegHistory).forEach(kegNo => {
+        (kegHistory[kegNo]||[]).forEach(entry => {
+          if (entry.beer===beer && String(entry.batch).replace(/^0+/,'')===oldStripped) {
+            entry.batch = newBatch;
+            changed = true;
+          }
+        });
+      });
+      if (changed) {
+        await fetch(SB_URL + '/rest/v1/kegs', {
+          method: 'POST',
+          headers: { ...SB_HDR, 'Prefer': 'resolution=merge-duplicates,return=minimal' },
+          body: JSON.stringify({ id: '__keg_history__', data: { kegHistory }, updated_at: new Date().toISOString() })
+        });
+      }
+    }
+  } catch(e) { console.error('renameBrewBatchInKegs: kegHistory update failed', e); }
 }
 
 function updateLog(id, field, val) {
