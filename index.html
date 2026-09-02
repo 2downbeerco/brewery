@@ -4275,7 +4275,11 @@ function handlePOItemNameInput(idx, inputEl) {
   const trimmedName = (_poItems[idx].name||'').trim();
   const isNewItem = trimmedName !== '' && !state.rawMaterials.some(r=>r.name.toLowerCase()===trimmedName.toLowerCase());
   const wasNew = inputEl.dataset.wasNew === 'true';
-  if (isNewItem !== wasNew) renderPOItems();
+  if (isNewItem !== wasNew) {
+    renderPOItems();
+    const nameEl = document.querySelector(`#po-items-list > div:nth-child(${idx+2}) input`);
+    if (nameEl) { nameEl.focus(); const v = nameEl.value; nameEl.value=''; nameEl.value=v; }
+  }
 }
 
 function autofillPOItem(idx, typedName) {
