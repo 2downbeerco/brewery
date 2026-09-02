@@ -4258,6 +4258,7 @@ function renderPOItems(){
             oninput="_poItems[${idx}].batchNo=this.value">
         </div>
         ${extraField}
+        ${reorderField}
         <div style="font-size:12px;color:var(--muted);text-align:right;padding-bottom:2px;">
           Subtotal incl. GST:<br><strong style="font-size:14px;color:var(--text);">₹${((item.qty||0)*(item.unitCost||0)*(1+(item.gst||0)/100)).toFixed(2)}</strong>
         </div>
