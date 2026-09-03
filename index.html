@@ -2928,7 +2928,14 @@ function openTankDetail(id) {
   document.getElementById('tank-detail-modal').style.display='flex';
 }
 
-function closeTankDetail() { document.getElementById('tank-detail-modal').style.display='none'; }
+function closeTankDetail() {
+  document.getElementById('tank-detail-modal').style.display='none';
+  // The main Tanks page grid was rendered before the modal opened, so any
+  // changes made inside (stage, temp, gravity, carbonation, etc.) won't be
+  // reflected there until it's explicitly re-rendered — closing the modal
+  // shouldn't leave stale data showing underneath.
+  renderContent();
+}
 
 function openTransferToColdRoom(tankId) {
   const t = state.tanks.find(x=>x.id===tankId);
