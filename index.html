@@ -2856,7 +2856,10 @@ function openTankDetail(id) {
   const carbonationSection = (t.stage==='Carbonating'||t.stage==='Ready'||t.carbonationVol) ? `
     <div style="margin-top:16px;">
       <div style="font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:10px;">Carbonation</div>
-      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;">
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:8px;">
+        <div><label class="lbl" style="font-size:10px;">FG (°Plato)</label>
+          <input class="inp inp-sm" type="number" step="0.1" value="${t.fgPlato||''}" placeholder="e.g. 3.5"
+            onchange="updateTankFGPlato('${id}',+this.value)"></div>
         <div><label class="lbl" style="font-size:10px;">CO₂ Volume</label>
           <input class="inp inp-sm" type="number" step="0.1" value="${t.carbonationVol||''}" placeholder="2.5 vol"
             onchange="updateTankField('${id}','carbonationVol',+this.value)"></div>
@@ -2867,6 +2870,9 @@ function openTankDetail(id) {
           <input class="inp inp-sm" type="date" value="${t.readyDate||''}"
             onchange="updateTankField('${id}','readyDate',this.value)"></div>
       </div>
+      ${t.fgPlato?`<div style="font-size:11px;color:var(--muted);margin-top:6px;">
+        Actual FG: <strong>${(1+(t.fgPlato/(258.6-((t.fgPlato/258.2)*227.1)))).toFixed(3)}</strong> — pushed to the linked brew log's Completed tab automatically
+      </div>`:''}
     </div>` : '';
 
   document.getElementById('tank-detail-box').innerHTML = `
@@ -3150,6 +3156,34 @@ function updateTankField(id, field, val) {
   if (i<0) return;
   state.tanks[i][field] = val;
   saveState();
+}
+
+// The FG reading taken during Carbonating is entered as a °Plato value
+// (matching how the brewer actually measures it), converted to specific
+// gravity using the same formula used for Actual OG, and pushed straight
+// into the linked Completed brew log's Actual FG field — so there's one
+// place to enter it, rather than the brewer having to separately convert
+// and re-type it into the Brew Log afterward.
+function updateTankFGPlato(id, plato) {
+  const i = state.tanks.findIndex(x=>x.id===id);
+  if (i<0) return;
+  const t = state.tanks[i];
+  t.fgPlato = plato;
+
+  if (plato != null && plato !== '' && !isNaN(plato)) {
+    const sg = 1 + (plato/(258.6-((plato/258.2)*227.1)));
+    const linkedLog = t.beer ? state.brewLogs.find(log =>
+      log.status==='Completed' && log.beer===t.beer &&
+      String(log.batchNo||'').replace(/^0+/,'')===String(t.batchNo||'').replace(/^0+/,'')
+    ) : null;
+    if (linkedLog) {
+      const li = state.brewLogs.findIndex(l=>l.id===linkedLog.id);
+      state.brewLogs[li].fgActual = sg.toFixed(3);
+    }
+  }
+
+  saveState();
+  openTankDetail(id); // re-render modal in place to show the computed SG
 }
 
 function addTempLog(tankId) {
