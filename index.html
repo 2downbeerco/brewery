@@ -1228,7 +1228,7 @@ function renderBrewDetail(id) {
   function getBatches(rmId) {
     const r = state.rawMaterials.find(x=>x.id==rmId);
     if (!r || !r.batches) return [];
-    return r.batches.map(b=>({
+    return r.batches.filter(b=>!b.inactive).map(b=>({
       batchNo:     b.batchNo,
       extractLdk:  b.extractLdk  != null ? b.extractLdk  : null,
       alphaAcid:   b.alphaAcid   != null ? b.alphaAcid   : null,
@@ -1971,6 +1971,12 @@ function addExSample(id, sampleKey) {
   if (!state.brewLogs[i].execution[sampleKey]) state.brewLogs[i].execution[sampleKey] = [];
   state.brewLogs[i].execution[sampleKey].push({});
   saveState(); renderContent();
+  // Safety net: if the immediate render above somehow doesn't land (the
+  // first click on this button has been reported as sometimes needing to
+  // be clicked twice, with no reproducible cause found in code review),
+  // this deferred follow-up re-render ensures the new row shows up on its
+  // own shortly after, without requiring a second click.
+  setTimeout(() => { if (window._openBrewId === id) renderContent(); }, 120);
 }
 
 function removeExSample(id, sampleKey, idx) {
@@ -2046,11 +2052,13 @@ function updateIng(section, idx, field, val) {
     if (rm) {
       state.brewLogs[i][section][idx].name = rm.name;
       state.brewLogs[i][section][idx].unit = rm.unit;
-      // Auto-select the most recent batch directly from the raw material's
-      // own batches array — this is the current source of truth (matches
-      // getBatches()), not purchase order history, since batches can also
-      // come from manual entry or Transfer to Cold Room.
-      const batches = rm.batches || [];
+      // Auto-select the most recent ACTIVE batch directly from the raw
+      // material's own batches array — this is the current source of
+      // truth (matches getBatches()), not purchase order history, since
+      // batches can also come from manual entry or Transfer to Cold Room.
+      // Exhausted (zero-qty) batches are skipped — picking one wouldn't
+      // give the brewer anything to actually use.
+      const batches = (rm.batches || []).filter(b=>!b.inactive);
       const picked = batches.length ? [...batches].sort((a,b)=>(b.deliveryDate||'').localeCompare(a.deliveryDate||''))[0] : null;
       if (picked) {
         state.brewLogs[i][section][idx].batchNo    = picked.batchNo;
@@ -2259,22 +2267,49 @@ function updateBrewField(field, val) {
 // Deducts qty from a raw material's batches (FIFO by delivery date).
 // Malt deducts from breweryQty (grain on the brew floor); other categories from qty.
 // Returns the amount actually deducted (may be less than requested if insufficient stock).
-function deductFromBatches(rm, qtyNeeded) {
+// Deducts qty from a raw material's batches. If preferredBatchNo is given
+// (the batch actually selected in the brew log's ingredient dropdown), that
+// batch is drawn from FIRST — otherwise the recorded batch (and its
+// Extract LDK / Alpha Acid values shown on the recipe) could silently
+// disagree with whichever batch actually got deducted. Any quantity still
+// needed beyond what the preferred batch has falls back to FIFO by
+// delivery date across the rest.
+function deductFromBatches(rm, qtyNeeded, preferredBatchNo) {
   if (!rm.batches || !rm.batches.length || qtyNeeded<=0) return 0;
   const isMalt = rm.category==='Malt';
-  const sorted = [...rm.batches].sort((a,b)=>(a.deliveryDate||'').localeCompare(b.deliveryDate||''));
   let remaining = qtyNeeded;
   let deducted = 0;
-  for (const b of sorted) {
-    if (remaining<=0) break;
-    const avail = isMalt ? (b.breweryQty||0) : (b.qty||0);
-    if (avail<=0) continue;
-    const take = Math.min(avail, remaining);
-    if (isMalt) b.breweryQty = Math.round((b.breweryQty-take)*1000)/1000;
-    else b.qty = Math.round((b.qty-take)*1000)/1000;
-    remaining -= take;
-    deducted += take;
+
+  if (preferredBatchNo) {
+    const preferred = rm.batches.find(b=>b.batchNo===preferredBatchNo);
+    if (preferred) {
+      const avail = isMalt ? (preferred.breweryQty||0) : (preferred.qty||0);
+      if (avail>0) {
+        const take = Math.min(avail, remaining);
+        if (isMalt) preferred.breweryQty = Math.round((preferred.breweryQty-take)*1000)/1000;
+        else preferred.qty = Math.round((preferred.qty-take)*1000)/1000;
+        remaining -= take;
+        deducted += take;
+      }
+    }
   }
+
+  if (remaining > 0) {
+    const sorted = [...rm.batches]
+      .filter(b=>b.batchNo!==preferredBatchNo)
+      .sort((a,b)=>(a.deliveryDate||'').localeCompare(b.deliveryDate||''));
+    for (const b of sorted) {
+      if (remaining<=0) break;
+      const avail = isMalt ? (b.breweryQty||0) : (b.qty||0);
+      if (avail<=0) continue;
+      const take = Math.min(avail, remaining);
+      if (isMalt) b.breweryQty = Math.round((b.breweryQty-take)*1000)/1000;
+      else b.qty = Math.round((b.qty-take)*1000)/1000;
+      remaining -= take;
+      deducted += take;
+    }
+  }
+
   return Math.round(deducted*1000)/1000;
 }
 
@@ -2397,7 +2432,7 @@ function completeBrew(id) {
   allIngs.forEach(ing=>{
     const rm = state.rawMaterials.find(r=>r.id==ing.rmId);
     if (rm) {
-      deductFromBatches(rm, ing.qty);
+      deductFromBatches(rm, ing.qty, ing.batchNo);
       rmStatus(rm);
     }
   });
@@ -3842,7 +3877,7 @@ function fixBrewLogIds() {
     [...b.grains, ...b.hops, ...b.yeast, ...b.other, ...b.boilAdd].forEach(ing => {
       if (ing.rmId && !ing.batchNo) {
         const rm = state.rawMaterials.find(r=>r.id==ing.rmId);
-        const batches = rm?.batches || [];
+        const batches = (rm?.batches || []).filter(bt=>!bt.inactive);
         const picked = batches.length ? [...batches].sort((a,c)=>(c.deliveryDate||'').localeCompare(a.deliveryDate||''))[0] : null;
         if (picked) {
           ing.batchNo = picked.batchNo;
@@ -3938,9 +3973,45 @@ function saveRM(){
     reorder:+document.getElementById('rmm-reorder').value||0,
   };
   if(!obj.name){toast('Name required',false);return;}
+  let cascadeMsg = '';
   if(id){
     const i=state.rawMaterials.findIndex(x=>x.id===id);
+    const existing = state.rawMaterials[i];
+
+    // Changing category on an item that already has batches is risky:
+    // Malt batches store warehouseQty/breweryQty, every other category
+    // stores qty. Deduction reads whichever field matches the CURRENT
+    // category — so switching category on existing batches would make
+    // future deductions silently find nothing to take from.
+    if (existing.category !== obj.category && existing.batches && existing.batches.length) {
+      const wasMalt = existing.category === 'Malt', willBeMalt = obj.category === 'Malt';
+      if (wasMalt !== willBeMalt) {
+        if (!confirm(`"${existing.name}" already has ${existing.batches.length} batch(es) recorded under ${existing.category}. Changing category to ${obj.category} will make future stock deductions unable to find quantity on those existing batches (they'll need to be re-entered). Continue anyway?`)) return;
+      }
+    }
+
+    const nameChanged = existing.name !== obj.name;
+    const unitChanged = existing.unit !== obj.unit;
+
     state.rawMaterials[i]={...state.rawMaterials[i],...obj};
+
+    // Cascade name/unit corrections to every brew log ingredient that
+    // references this item — otherwise a rename leaves every existing
+    // recipe showing the old name/unit forever, since those are frozen
+    // copies taken at the time the ingredient was selected.
+    if (nameChanged || unitChanged) {
+      let touched = 0;
+      state.brewLogs.forEach(log => {
+        [...(log.grains||[]),...(log.hops||[]),...(log.yeast||[]),...(log.other||[]),...(log.boilAdd||[])].forEach(ing => {
+          if (ing.rmId == id) {
+            if (nameChanged) ing.name = obj.name;
+            if (unitChanged) ing.unit = obj.unit;
+            touched++;
+          }
+        });
+      });
+      if (touched) cascadeMsg = ` — updated ${touched} recipe ingredient reference${touched!==1?'s':''} to match`;
+    }
   } else {
     obj.id=state.nextRMId++;
     obj.stock=0;
@@ -3948,7 +4019,7 @@ function saveRM(){
     obj.lastCost=0;
     state.rawMaterials.push(obj);
   }
-  saveState();closeRMModal();renderContent();toast('Saved');
+  saveState();closeRMModal();renderContent();toast('Saved'+cascadeMsg);
 }
 function deleteRM(){
   const id=+document.getElementById('rmm-id').value;
@@ -4071,11 +4142,24 @@ function saveBatch(){
   saveState();closeBatchModal();renderContent();toast('Batch saved');
 }
 function deleteBatch(rmId,bi){
-  if(!confirm('Delete this batch?'))return;
   const i=state.rawMaterials.findIndex(x=>x.id===rmId);if(i<0)return;
   const r = state.rawMaterials[i];
   const batchAtClick = r.batches[bi];
   if (!batchAtClick) { toast('That batch no longer exists.', false); renderContent(); return; }
+
+  // Warn if an active (not yet Completed) recipe has this exact batch selected
+  const referencingLogs = state.brewLogs.filter(log => {
+    if (log.status === 'Completed') return false;
+    const allIngs = [...(log.grains||[]),...(log.hops||[]),...(log.yeast||[]),...(log.other||[]),...(log.boilAdd||[])];
+    return allIngs.some(ing => ing.rmId == rmId && ing.batchNo === batchAtClick.batchNo);
+  });
+  let msg = 'Delete this batch?';
+  if (referencingLogs.length) {
+    const names = referencingLogs.map(l => `${beerName(l.beer)}${l.batchNo?' (Batch '+l.batchNo+')':''}`).join(', ');
+    msg = `Batch "${batchAtClick.batchNo}" is selected in ${referencingLogs.length} active recipe${referencingLogs.length!==1?'s':''}: ${names}.\n\nDeleting it will leave that ingredient unable to resolve this batch. Delete anyway?`;
+  }
+  if(!confirm(msg))return;
+
   const freshBi = r.batches.findIndex(b=>b.batchNo===batchAtClick.batchNo);
   if (freshBi<0) { toast('That batch no longer exists.', false); renderContent(); return; }
   r.batches.splice(freshBi,1);
