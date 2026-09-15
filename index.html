@@ -2364,18 +2364,42 @@ function updateActualVolume(id, val) {
   const i = state.brewLogs.findIndex(b=>b.id===id);
   if (i<0) return;
   const log = state.brewLogs[i];
+  const oldVal = log.actualVol!=null ? log.actualVol : val;
   log.actualVol = val;
 
   const tankId = log.tank || log.execution?.fvTank || null;
   const tank = tankId ? state.tanks.find(t=>t.id===tankId) : null;
+  let updatedSomewhere = false;
   if (tank && tank.beer === log.beer && String(tank.batchNo||'').replace(/^0+/,'') === String(log.batchNo||'').replace(/^0+/,'')) {
     // Only correct the tank if it still holds THIS batch — if it's already
     // been cleared/reassigned, don't touch whatever's in there now.
     const ti = state.tanks.findIndex(t=>t.id===tankId);
     state.tanks[ti].vol = val;
     state.tanks[ti].batchVol = val;
-  } else if (tankId && !tank) {
-    toast('Linked tank not found — actual volume recorded, but tank could not be updated', false);
+    updatedSomewhere = true;
+  }
+
+  // The batch may instead (or additionally, if a partial transfer left
+  // some behind — rare, but possible) already be sitting in cold room —
+  // this was previously never checked at all, so a correction made after
+  // a batch had moved to cold room had nowhere to apply and silently did
+  // nothing there. Apply the SAME delta (not an overwrite) so any
+  // dispatching that's already happened via keg assignments isn't wiped out.
+  let strippedBatchNo = String(log.batchNo||'');
+  if (log.beer && strippedBatchNo.toUpperCase().startsWith(log.beer.toUpperCase())) strippedBatchNo = strippedBatchNo.slice(log.beer.length);
+  const invIdx = state.beerInventory.findIndex(x=>x.beer===log.beer);
+  if (invIdx>=0) {
+    const batchIdx = state.beerInventory[invIdx].batches.findIndex(b=>String(b.batchNo).replace(/^0+/,'')===strippedBatchNo.replace(/^0+/,''));
+    if (batchIdx>=0) {
+      const delta = val - oldVal;
+      const b = state.beerInventory[invIdx].batches[batchIdx];
+      b.litres = Math.max(0, Math.round(((b.litres||0) + delta)*1000)/1000);
+      updatedSomewhere = true;
+    }
+  }
+
+  if (tankId && !tank && !updatedSomewhere) {
+    toast('Linked tank not found, and no matching cold room batch either — actual volume recorded on the recipe, but no stock location could be updated', false);
   }
 
   saveState();
