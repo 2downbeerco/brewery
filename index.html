@@ -2134,8 +2134,15 @@ function cascadeBatchNoChange(beer, oldBatchNo, newBatchNo, targetTankId) {
     }
   }
 
-  // Rename (not delete) the bar order entry, preserving its litres/active state
-  renameBrewBatchInKegs(beer, oldStripped, newStripped);
+  // Rename (not delete) the bar order entry, preserving its litres/active
+  // state. If the batch number was originally blank, computeBreweryBeers()
+  // would have pushed it under a "-CR" placeholder (cold room) rather than
+  // an empty string — the beer-code prefix gets stripped from that
+  // placeholder too, same as any real batch number, leaving just "-CR" by
+  // itself. Search for that instead, or the rename can never find it and
+  // the placeholder is left stranded permanently.
+  const searchOldBatch = oldStripped || '-CR';
+  renameBrewBatchInKegs(beer, searchOldBatch, newStripped);
 }
 
 function updateBatchNo(id, newVal) {
