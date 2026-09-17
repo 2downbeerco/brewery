@@ -3544,9 +3544,19 @@ function renderRMInventory() {
 
   const costItems = isAll ? state.rawMaterials : items;
   const totalCost = costItems.reduce((s,r)=>{
-    const {total}=rmStatus(r);
-    const avgCost = r.batches&&r.batches.length ? r.batches.reduce((a,b)=>a+(b.cost||0),0)/r.batches.length : (r.lastCost||0);
-    return s+(total*avgCost);
+    // Value each batch by its OWN quantity × its OWN cost, then sum —
+    // this correctly weights larger batches more heavily than smaller
+    // ones. The previous approach averaged cost across batches EQUALLY
+    // regardless of size (so a tiny adjustment batch counted the same as
+    // a large purchase), then multiplied by total quantity — which
+    // distorts the total whenever batch sizes vary, exactly the kind of
+    // mismatch that was producing an implausibly low average cost.
+    if (!r.batches || !r.batches.length) return s;
+    const itemValue = r.batches.reduce((bs,b) => {
+      const qty = r.category==='Malt' ? (b.warehouseQty||0)+(b.breweryQty||0) : (b.qty||0);
+      return bs + qty*(b.cost||0);
+    }, 0);
+    return s+itemValue;
   },0);
   const tickerLabel = isAll?'Total Inventory Value':`${filter} Inventory Value`;
 
