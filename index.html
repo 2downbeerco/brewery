@@ -2678,6 +2678,14 @@ function renderTanks() {
             ${t.since?`<div class="tank-days">Day ${ds} · since ${fmtDate(t.since)}</div>`:''}
             ${t.temp!=null?`<div class="tank-days">🌡️ ${t.temp}°C</div>`:''}
             ${(()=>{
+              if (t.stage==='Ready') {
+                // A Ready tank should show its recorded FG (entered during
+                // Carbonating), not just whatever the last logged gravity
+                // reading happens to be — those are two different things,
+                // and the last log entry could be a stale mid-ferment
+                // reading if FG was recorded separately.
+                return t.fgPlato!=null ? `<div class="tank-days" style="color:var(--blue);">FG: ${t.fgPlato}°P</div>` : '';
+              }
               const lastG = gLog.slice().reverse().find(g=>g.plato!=null||g.sg!=null);
               return lastG && t.stage!=='Conditioning' ? `<div class="tank-days" style="color:var(--blue);">${lastG.plato||lastG.sg}°P <span style="font-size:10px;">(${fmtDate(lastG.date)})</span></div>` : '';
             })()}
