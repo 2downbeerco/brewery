@@ -572,10 +572,15 @@ async function pushBreweryBeersToKegs(breweryBeers) {
     merged.forEach((b, idx) => {
       if (b.inactive) return;
       if (b.source === 'coldroom') {
-        const stillInBrewOps = breweryBeers.some(bb =>
+        const pushedBatch = breweryBeers.find(bb =>
           String(bb.batch).replace(/^0+/,'') === String(b.batch).replace(/^0+/,'') && bb.beer === b.beer
         );
-        if (!stillInBrewOps) merged[idx] = { ...b, inactive: true };
+        // Deactivate if the batch is no longer pushed at all (removed from
+        // brew ops entirely), OR if it's still pushed but its litres has
+        // been corrected down to 0 — this second case was never actually
+        // checked before, despite computeBreweryBeers() deliberately still
+        // pushing 0-litre batches specifically so this could catch them.
+        if (!pushedBatch || (pushedBatch.litres||0) <= 0) merged[idx] = { ...b, inactive: true };
       } else if (b.source === 'tank' && b.tankId) {
         const tank = state.tanks.find(t=>String(t.id)===String(b.tankId));
         if (tank && (tank.vol||0) <= 0) merged[idx] = { ...b, inactive: true };
