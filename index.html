@@ -837,7 +837,10 @@ function renderBrewList() {
         <div style="font-size:18px;font-weight:700;">Brew Log</div>
         <div style="font-size:13px;color:var(--muted);margin-top:2px;">Each entry captures the full recipe and deducts stock on completion.</div>
       </div>
-      <button class="btn btn-primary" onclick="newBrewLog()">+ New Brew</button>
+      <div style="display:flex;gap:8px;">
+        <button class="btn btn-ghost" onclick="openCopyRecipeModal()">📋 Copy Recipe</button>
+        <button class="btn btn-primary" onclick="newBrewLog()">+ New Brew</button>
+      </div>
     </div>
 
     ${logs.length===0?`<div class="empty" style="background:var(--surface);border:1px solid var(--border);border-radius:12px;">
@@ -891,6 +894,67 @@ function newBrewLog() {
   window._openBrewId = id;
   renderNav();
   renderContent();
+}
+
+function openCopyRecipeModal() {
+  document.getElementById('cr-beer-filter').value = '';
+  renderCopyRecipeList();
+  document.getElementById('copy-recipe-modal').style.display = 'flex';
+}
+
+function closeCopyRecipeModal() {
+  document.getElementById('copy-recipe-modal').style.display = 'none';
+}
+
+function renderCopyRecipeList() {
+  const filterBeer = document.getElementById('cr-beer-filter').value;
+  const logs = state.brewLogs
+    .filter(b => !filterBeer || b.beer===filterBeer)
+    .sort((a,b) => b.date.localeCompare(a.date));
+
+  document.getElementById('cr-list').innerHTML = logs.length ? logs.map(b => `
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border:1px solid var(--border);border-radius:8px;margin-bottom:6px;">
+      <div>
+        <div style="font-weight:600;font-size:13px;">${beerName(b.beer)} ${b.batchNo?'· Batch '+b.batchNo:''}</div>
+        <div style="font-size:11px;color:var(--muted);">${fmtDate(b.date)} · ${b.status}</div>
+      </div>
+      <button class="btn btn-primary btn-sm" onclick="copyBrewLog(${b.id})">Copy</button>
+    </div>`).join('') : `<div class="empty">No recipes found</div>`;
+}
+
+// Creates a new Draft/Recipe from an existing brew log's ingredients and
+// process settings — the whole point being to avoid re-entering the same
+// recipe by hand for every new batch of the same beer. Raw material batch
+// selections are intentionally NOT copied (the batch used last time may be
+// exhausted or no longer exist by now — the brewer re-selects fresh), and
+// nothing batch-specific (batch number, dates, execution data, gravity
+// log, tank) carries over, since all of that is unique to the new brew.
+function copyBrewLog(sourceId) {
+  const src = state.brewLogs.find(b=>b.id===sourceId);
+  if (!src) return;
+  const id = state.nextBrewId++;
+  const today = new Date().toISOString().slice(0,10);
+  const cloneIngs = (arr) => (arr||[]).map(ing => ({
+    rmId: ing.rmId, name: ing.name, qty: ing.qty, unit: ing.unit,
+  }));
+  const log = {
+    id, date: today, beer: src.beer, targetVol: src.targetVol,
+    brewer: '', tank: '', notes: '',
+    mashTemp: src.mashTemp, mashTime: src.mashTime, boilTime: src.boilTime, yieldEst: '',
+    ogTarget: src.ogTarget, fgTarget: src.fgTarget,
+    grains: cloneIngs(src.grains), hops: cloneIngs(src.hops), yeast: cloneIngs(src.yeast),
+    other: cloneIngs(src.other), boilAdd: cloneIngs(src.boilAdd),
+    mash: JSON.parse(JSON.stringify(src.mash||{})),
+    checks: {}, execution: {},
+    status: 'Draft', inventoryDeducted: false,
+  };
+  state.brewLogs.push(log);
+  saveState();
+  closeCopyRecipeModal();
+  window._openBrewId = id;
+  renderNav();
+  renderContent();
+  toast(`New recipe created from ${beerName(src.beer)}${src.batchNo?' batch '+src.batchNo:''}`);
 }
 
 function printRecipe(id) {
@@ -4968,6 +5032,27 @@ function renderBeerInv() {
           </tr>`;}).join('')}
         </tbody>
       </table></div>
+    </div>
+
+    <!-- Copy Recipe Modal -->
+    <div id="copy-recipe-modal" class="modal-overlay" style="display:none;" onclick="if(event.target===this)closeCopyRecipeModal()">
+      <div class="modal-box" style="max-width:520px;">
+        <div class="modal-title">Copy Recipe</div>
+        <div style="font-size:12px;color:var(--muted);margin-bottom:14px;">
+          Starts a new Recipe with the same ingredients and process settings. Raw material batches, batch number, dates, and execution data are left blank for you to fill in fresh.
+        </div>
+        <div class="form-group">
+          <label class="lbl">Beer</label>
+          <select class="inp" id="cr-beer-filter" onchange="renderCopyRecipeList()">
+            <option value="">All beers</option>
+            ${getBeers(true).map(b=>`<option value="${b.code}">${b.name}</option>`).join('')}
+          </select>
+        </div>
+        <div id="cr-list" style="max-height:360px;overflow-y:auto;margin-top:8px;"></div>
+        <div class="modal-actions">
+          <button class="btn btn-ghost" onclick="closeCopyRecipeModal()">Cancel</button>
+        </div>
+      </div>
     </div>
 
     <!-- Consumed Batches Modal -->
