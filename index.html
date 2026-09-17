@@ -2385,8 +2385,20 @@ function updateActualVolume(id, val) {
   if (tank && tank.beer === log.beer && String(tank.batchNo||'').replace(/^0+/,'') === String(log.batchNo||'').replace(/^0+/,'')) {
     // Only correct the tank if it still holds THIS batch — if it's already
     // been cleared/reassigned, don't touch whatever's in there now.
+    // batchVol (the total) is set directly to the new value — that's
+    // exactly what it means to correct the total. But vol (what's
+    // CURRENTLY in the tank right now) gets the same delta applied
+    // instead of being overwritten, so any kegs already dispatched via
+    // bar order since this batch was created aren't silently wiped out.
+    // If Actual Volume has never been entered before (log.actualVol was
+    // unset), fall back to the tank's own current batchVol as the "what
+    // did we think the total was" reference for computing that delta,
+    // rather than defaulting to a no-op zero delta that would leave a
+    // stale/wrong volume untouched.
+    const oldValForTank = log.actualVol!=null ? oldVal : (tank.batchVol!=null ? tank.batchVol : val);
     const ti = state.tanks.findIndex(t=>t.id===tankId);
-    state.tanks[ti].vol = val;
+    const delta = val - oldValForTank;
+    state.tanks[ti].vol = Math.max(0, Math.round(((state.tanks[ti].vol||0) + delta)*1000)/1000);
     state.tanks[ti].batchVol = val;
     updatedSomewhere = true;
   }
