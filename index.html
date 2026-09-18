@@ -141,7 +141,10 @@
   .brew-list-item:hover { box-shadow: 0 3px 10px rgba(0,0,0,0.07); }
   .brew-list-item.active-brew { border-color: var(--accent); background: var(--accent-bg); }
 
-  .brew-sheet { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 20px; align-items: start; }
+  .brew-sheet { display: grid; grid-template-columns: 1fr; gap: 20px; align-items: start; }
+  @media (min-width: 820px)  { .brew-sheet { grid-template-columns: 1fr 1fr; } }
+  @media (min-width: 1300px) { .brew-sheet { grid-template-columns: 1fr 1fr 1fr; } }
+  @media (min-width: 1750px) { .brew-sheet { grid-template-columns: 1fr 1fr 1fr 1fr; } }
   .ba-row { display: grid; grid-template-columns: 1fr 70px 60px 60px 24px; gap: 6px; align-items: center; }
   .brew-section { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 20px; }
   .brew-section-title { font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 14px; display: flex; align-items: center; justify-content: space-between; }
