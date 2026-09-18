@@ -893,23 +893,22 @@ function renderBrewList() {
 // TEMPORARY diagnostic — measures actual rendered widths of the Recipe
 // grid's ancestor chain, to find exactly where width is being lost.
 // Remove once the layout issue is resolved.
-function showWidthDebug() {
-  const el = document.getElementById('__width-debug');
-  if (!el) return;
-  const measure = (sel) => {
-    const node = document.querySelector(sel);
-    if (!node) return sel + ': NOT FOUND';
-    const r = node.getBoundingClientRect();
-    const cs = getComputedStyle(node);
-    return sel + ': ' + Math.round(r.width) + 'px (display=' + cs.display + ')';
+// Forces .brew-sheet to match its parent's actual measured width — a
+// fallback fix since width:100% alone wasn't taking effect reliably in
+// this specific flex layout context.
+function fixBrewSheetWidth() {
+  const applyFix = () => {
+    const sheet = document.querySelector('.brew-sheet');
+    const parent = document.querySelector('.brew-detail');
+    if (!sheet || !parent) return;
+    const w = parent.getBoundingClientRect().width;
+    if (w > 0) sheet.style.width = w + 'px';
   };
-  el.innerHTML = [
-    measure('#content'),
-    measure('.brew-detail'),
-    measure('.brew-sheet'),
-    measure('.brew-sheet .brew-section'),
-    'window inner width: ' + window.innerWidth + 'px'
-  ].join('<br>');
+  applyFix();
+  if (!window._brewSheetResizeBound) {
+    window.addEventListener('resize', applyFix);
+    window._brewSheetResizeBound = true;
+  }
 }
 
 function newBrewLog() {
@@ -1897,8 +1896,7 @@ function renderBrewDetail(id) {
     </div>` : ''}
 
     <!-- ── RECIPE GRID ── -->
-    <div id="__width-debug" style="background:#fee;border:2px solid red;padding:10px;margin-bottom:10px;font-family:monospace;font-size:13px;">Loading measurements…</div>
-    <img src="x" onerror="this.remove();showWidthDebug()" style="display:none">
+    <img src="x" onerror="this.remove();fixBrewSheetWidth()" style="display:none">
     <div class="brew-sheet">
 
       <div class="brew-section" style="flex:1 1 400px;min-width:0;">
