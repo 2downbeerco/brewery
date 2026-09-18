@@ -3724,7 +3724,10 @@ function renderRMInventory() {
     if (!r.batches || !r.batches.length) return s;
     const itemValue = r.batches.reduce((bs,b) => {
       const qty = r.category==='Malt' ? (b.warehouseQty||0)+(b.breweryQty||0) : (b.qty||0);
-      return bs + qty*(b.cost||0);
+      // Include GST — reflects the full landed/paid cost, not just the
+      // base unit cost entered on the PO.
+      const unitCostInclGst = (b.cost||0) * (1 + (b.gstPct||0)/100);
+      return bs + qty*unitCostInclGst;
     }, 0);
     return s+itemValue;
   },0);
@@ -4752,7 +4755,7 @@ function savePO(){
     if(qtyDelta === 0 && !isNew) {
       // No qty change — still update cost/metadata
       const bi=r.batches.findIndex(b=>b.batchNo===batchNo);
-      if(bi>=0) { r.batches[bi].cost=item.unitCost||0; if(isMalt&&item.extractLdk!=null) r.batches[bi].extractLdk=item.extractLdk; if(isHops&&item.alphaAcid!=null) r.batches[bi].alphaAcid=item.alphaAcid; }
+      if(bi>=0) { r.batches[bi].cost=item.unitCost||0; r.batches[bi].gstPct=item.gst||0; if(isMalt&&item.extractLdk!=null) r.batches[bi].extractLdk=item.extractLdk; if(isHops&&item.alphaAcid!=null) r.batches[bi].alphaAcid=item.alphaAcid; }
       return;
     }
 
@@ -4762,12 +4765,13 @@ function savePO(){
       if(isMalt) r.batches[existingBi].warehouseQty=Math.max(0,(r.batches[existingBi].warehouseQty||0)+qtyDelta);
       else r.batches[existingBi].qty=Math.max(0,(r.batches[existingBi].qty||0)+qtyDelta);
       r.batches[existingBi].cost=item.unitCost||r.batches[existingBi].cost;
+      r.batches[existingBi].gstPct=item.gst!=null?item.gst:r.batches[existingBi].gstPct;
       if(isMalt&&item.extractLdk!=null) r.batches[existingBi].extractLdk=item.extractLdk;
       if(isHops&&item.alphaAcid!=null) r.batches[existingBi].alphaAcid=item.alphaAcid;
     } else if(qtyDelta>0){
       // New batch
       r.batches.push({
-        batchNo, deliveryDate:po.deliveryDate||null, cost:item.unitCost||0,
+        batchNo, deliveryDate:po.deliveryDate||null, cost:item.unitCost||0, gstPct:item.gst||0,
         ...(isMalt?{warehouseQty:item.qty||0,breweryQty:0,extractLdk:item.extractLdk!=null?item.extractLdk:null}
           :isHops?{qty:item.qty||0,alphaAcid:item.alphaAcid!=null?item.alphaAcid:null}
           :{qty:item.qty||0})
