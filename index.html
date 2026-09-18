@@ -2019,6 +2019,19 @@ function renderBrewDetail(id) {
       </div>`;
       })()}
 
+      <!-- Lifecycle Events -->
+      ${log.events && log.events.length ? `
+      <div class="brew-section" style="grid-column:1/-1;">
+        <div class="brew-section-title">🕒 Lifecycle Events</div>
+        <div class="tbl-wrap"><table class="tbl" style="font-size:13px;">
+          <thead><tr><th>Date</th><th>Event</th></tr></thead>
+          <tbody>${log.events.slice().sort((a,b)=>(a.date||'').localeCompare(b.date||'')).map(ev=>`<tr>
+            <td style="white-space:nowrap;">${fmtDate(ev.date)}</td>
+            <td>${ev.description}</td>
+          </tr>`).join('')}</tbody>
+        </table></div>
+      </div>` : ''}
+
       <!-- Notes -->
       <div class="brew-section" style="grid-column:1/-1;">
         <div class="brew-section-title">📝 Notes</div>
@@ -3160,6 +3173,10 @@ function confirmTransferToColdRoom() {
     state.beerInventory[invIdx].batches.push({ batchNo, litres: vol });
   }
 
+  if (t.beer) {
+    logBrewEvent(t.beer, t.batchNo, 'transfer-coldroom', `Transferred ${vol}L to Cold Room from ${t.name}`);
+  }
+
   // Save cold room addition first before clearing tank
   saveState();
 
@@ -3261,9 +3278,11 @@ function confirmTransferToTank() {
     readyDate: null,
   };
 
-  saveState();
+  if (source.beer) {
+    logBrewEvent(source.beer, source.batchNo, 'transfer-tank', `Transferred ${vol}L from ${source.name} to ${state.tanks[di].name} (${destStage})`);
+  }
 
-  // Push the corrected batch size to bar order directly for immediate consistency
+  saveState();
   if (source.beer) pushBatchSizeCorrection(source.beer, strippedBatchNo, correctedVol);
 
   // If this batch was already visible in bar order (had been Ready before),
@@ -3313,7 +3332,11 @@ function changeTankStage(id, newStage) {
     showArchivePrompt(id, tank, obj);
     return;
   }
+  const oldStage = tank.stage;
   state.tanks[i].stage = newStage;
+  if (newStage === 'Ready' && oldStage !== 'Ready' && tank.beer) {
+    logBrewEvent(tank.beer, tank.batchNo, 'ready', `Marked Ready in ${tank.name}`);
+  }
   saveState();
   openTankDetail(id); // re-render modal in place
 }
@@ -3555,6 +3578,27 @@ function buildTankGravityHistory(tank) {
     });
   }
   return base.sort((a,b)=>(a.date||'').localeCompare(b.date||''));
+}
+
+// Records a lifecycle milestone (reaching Ready, a tank transfer, a cold
+// room transfer, etc.) onto the matching Completed brew log — a running
+// history of what happened to a batch after brew day, shown below its
+// Gravity Readings, alongside the readings themselves.
+function logBrewEvent(beer, batchNo, type, description) {
+  if (!beer) return;
+  const stripped = String(batchNo||'').replace(/^0+/,'');
+  const log = state.brewLogs.find(b =>
+    b.status === 'Completed' && b.beer === beer &&
+    String(b.batchNo||'').replace(/^0+/,'') === stripped
+  );
+  if (!log) return;
+  const li = state.brewLogs.findIndex(b => b.id === log.id);
+  if (!state.brewLogs[li].events) state.brewLogs[li].events = [];
+  state.brewLogs[li].events.push({
+    date: new Date().toISOString().slice(0,10),
+    type,
+    description,
+  });
 }
 
 function clearTankNoArchive(tankId) {
