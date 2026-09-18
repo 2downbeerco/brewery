@@ -982,20 +982,21 @@ function printRecipe(id) {
   const log = state.brewLogs.find(b=>b.id===id);
   if (!log) return;
 
-  const ingRow = (ing, showT) => `<tr>
+  const ingRow = (ing, showT, showAA) => `<tr>
     <td>${ing.name||'—'}</td>
     <td style="text-align:right;">${ing.qty||0} ${ing.unit||''}</td>
     <td>${ing.batchNo||'—'}</td>
+    ${showAA?`<td style="text-align:right;font-weight:700;">${ing.alphaAcid!=null?ing.alphaAcid+'%':'—'}</td>`:''}
     ${showT?`<td style="text-align:right;">${ing.tMin!=null?ing.tMin+' min':'—'}</td>`:''}
   </tr>`;
 
-  const ingTable = (title, items, showT) => {
+  const ingTable = (title, items, showT, showAA) => {
     if (!items || !items.length) return '';
     return `<div class="section">
       <div class="section-title">${title}</div>
       <table>
-        <thead><tr><th>Item</th><th style="text-align:right;">Qty</th><th>Batch</th>${showT?'<th style="text-align:right;">Time (t=)</th>':''}</tr></thead>
-        <tbody>${items.map(i=>ingRow(i, showT)).join('')}</tbody>
+        <thead><tr><th>Item</th><th style="text-align:right;">Qty</th><th>Batch</th>${showAA?'<th style="text-align:right;">AA%</th>':''}${showT?'<th style="text-align:right;">Time (t=)</th>':''}</tr></thead>
+        <tbody>${items.map(i=>ingRow(i, showT, showAA)).join('')}</tbody>
       </table>
     </div>`;
   };
@@ -1072,7 +1073,7 @@ function printRecipe(id) {
   ${strikeInfo}
   ${mashTable}
   ${ingTable('Grains / Malt', log.grains, false)}
-  ${ingTable('Hops', log.hops, true)}
+  ${ingTable('Hops', log.hops, true, true)}
   ${ingTable('Yeast', log.yeast, false)}
   ${ingTable('Other Additions', log.other, false)}
   ${ingTable('Boil Additions', log.boilAdd, true)}
@@ -1360,41 +1361,41 @@ function renderBrewDetail(id) {
       if (rm && batches.length > 0) {
         const batchOpts = batches.map(b=>`<option value="${b.batchNo}" ${ing.batchNo===b.batchNo?'selected':''}>${b.batchNo}${b.deliveryDate?' ('+fmtDate(b.deliveryDate)+')':''}</option>`).join('');
         const picked = batches.find(b=>b.batchNo===ing.batchNo) || batches[0];
+        const extra = (isMalt&&picked?.extractLdk!=null) ? `LDK ${picked.extractLdk}` : (isHops&&picked?.alphaAcid!=null) ? `AA ${picked.alphaAcid}%` : '';
         batchRow = `
-          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:6px;">
-            <select class="inp inp-sm" style="flex:1;min-width:160px;" onchange="selectIngBatch('${section}',${idx},this.value)">
+          <div style="display:flex;align-items:center;gap:6px;margin-top:4px;">
+            <select class="inp inp-sm" style="flex:1;min-width:0;font-size:12px;padding:4px 8px;" onchange="selectIngBatch('${section}',${idx},this.value)">
               ${batchOpts}
             </select>
-            ${isMalt&&picked?.extractLdk!=null?`<span style="font-size:11px;color:var(--muted);">LDK: <strong>${picked.extractLdk}</strong></span>`:''}
-            ${isHops&&picked?.alphaAcid!=null?`<span style="font-size:11px;color:var(--muted);">AA: <strong>${picked.alphaAcid}%</strong></span>`:''}
+            ${extra?`<span style="font-size:11px;color:var(--muted);white-space:nowrap;">${extra}</span>`:''}
           </div>`;
       } else if (rm) {
         // RM exists but no PO batches — show last known if any, or just a text input
         const hasBatch = rm.lastBatchNo;
-        batchRow = `<div style="margin-top:6px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-          <input class="inp inp-sm" style="flex:1;min-width:160px;" value="${ing.batchNo||rm.lastBatchNo||''}" placeholder="Batch no."
+        const extra = (isMalt&&rm.extractLdk!=null) ? `LDK ${rm.extractLdk}` : (isHops&&rm.alphaAcid!=null) ? `AA ${rm.alphaAcid}%` : '';
+        batchRow = `<div style="display:flex;align-items:center;gap:6px;margin-top:4px;">
+          <input class="inp inp-sm" style="flex:1;min-width:0;font-size:12px;padding:4px 8px;" value="${ing.batchNo||rm.lastBatchNo||''}" placeholder="Batch no."
             onchange="updateIng('${section}',${idx},'batchNo',this.value)">
-          ${isMalt&&rm.extractLdk!=null?`<span style="font-size:11px;color:var(--muted);">LDK: <strong>${rm.extractLdk}</strong></span>`:''}
-          ${isHops&&rm.alphaAcid!=null?`<span style="font-size:11px;color:var(--muted);">AA: <strong>${rm.alphaAcid}%</strong></span>`:''}
+          ${extra?`<span style="font-size:11px;color:var(--muted);white-space:nowrap;">${extra}</span>`:''}
         </div>`;
       }
 
       return `
-        <div style="background:var(--bg);border-radius:8px;padding:10px;margin-bottom:8px;">
-          <div style="display:grid;grid-template-columns:1fr 80px 60px 24px;gap:6px;align-items:center;">
-            <select class="inp inp-sm" onchange="updateIng('${section}',${idx},'rmId',this.value);updateIngUnit('${section}',${idx},this)">
+        <div style="padding:7px 0;border-bottom:1px solid var(--border);">
+          <div style="display:grid;grid-template-columns:1fr 70px 55px 20px;gap:6px;align-items:center;">
+            <select class="inp inp-sm" style="font-size:13px;padding:5px 8px;" onchange="updateIng('${section}',${idx},'rmId',this.value);updateIngUnit('${section}',${idx},this)">
               <option value="">— select —</option>
               ${rmOpts.replace(`value="${ing.rmId}"`,`value="${ing.rmId}" selected`)}
             </select>
-            <input class="inp inp-sm" type="number" step="0.01" value="${ing.qty||''}" placeholder="qty"
+            <input class="inp inp-sm" style="font-size:13px;padding:5px 8px;" type="number" step="0.01" value="${ing.qty||''}" placeholder="qty"
               onchange="updateIng('${section}',${idx},'qty',+this.value)">
-            <input class="inp inp-sm" value="${ing.unit||''}" placeholder="kg"
+            <input class="inp inp-sm" style="font-size:13px;padding:5px 8px;" value="${ing.unit||''}" placeholder="kg"
               onchange="updateIng('${section}',${idx},'unit',this.value)">
             <button class="del-btn" onclick="removeIng('${section}',${idx})">✕</button>
           </div>
           ${batchRow}
         </div>`;
-    }).join('') + (canEdit?`<button class="btn btn-ghost btn-sm" style="margin-top:4px;" onclick="addIng('${section}','${cats?cats[0]:''}')">+ Add</button>`:'');
+    }).join('') + (canEdit?`<button class="btn btn-ghost btn-sm" style="margin-top:6px;" onclick="addIng('${section}','${cats?cats[0]:''}')">+ Add</button>`:'');
   }
 
   // ── Hops rows with t= timing field ───────────────────────────────────────
@@ -1413,33 +1414,36 @@ function renderBrewDetail(id) {
             <span style="font-size:14px;font-weight:600;">${ing.name||'—'}</span>
             <span style="font-size:13px;color:var(--muted);">${ing.qty||0} ${ing.unit||'kg'} · t=${ing.tMin!=null?ing.tMin:'—'} min</span>
           </div>
-          ${ing.batchNo?`<div style="font-size:12px;color:var(--muted);margin-top:3px;">Batch: <strong>${ing.batchNo}</strong>${ing.alphaAcid!=null?' · AA: <strong>'+ing.alphaAcid+'%</strong>':''}</div>`:''}
+          <div style="display:flex;align-items:center;gap:8px;margin-top:3px;">
+            ${ing.batchNo?`<span style="font-size:12px;color:var(--muted);">Batch: <strong>${ing.batchNo}</strong></span>`:''}
+            ${ing.alphaAcid!=null?`<span style="font-size:13px;font-weight:700;color:var(--accent);">AA ${ing.alphaAcid}%</span>`:'<span style="font-size:11px;color:var(--red);">⚠ No AA% on file</span>'}
+          </div>
         </div>`;
       }
-      return `<div style="background:var(--bg);border-radius:8px;padding:10px;margin-bottom:8px;">
-        <div style="display:grid;grid-template-columns:1fr 70px 60px 60px 24px;gap:6px;align-items:center;margin-bottom:6px;">
-          <select class="inp inp-sm" onchange="updateIng('${section}',${idx},'rmId',this.value);updateIngUnit('${section}',${idx},this)">
+      return `<div style="padding:7px 0;border-bottom:1px solid var(--border);">
+        <div style="display:grid;grid-template-columns:1fr 60px 45px 50px 20px;gap:6px;align-items:center;">
+          <select class="inp inp-sm" style="font-size:13px;padding:5px 8px;" onchange="updateIng('${section}',${idx},'rmId',this.value);updateIngUnit('${section}',${idx},this)">
             <option value="">— select —</option>
             ${rmOpts.replace(`value="${ing.rmId}"`,`value="${ing.rmId}" selected`)}
           </select>
-          <input class="inp inp-sm" type="number" step="0.001" value="${ing.qty||''}" placeholder="qty"
+          <input class="inp inp-sm" style="font-size:13px;padding:5px 8px;" type="number" step="0.001" value="${ing.qty||''}" placeholder="qty"
             onchange="updateIng('${section}',${idx},'qty',+this.value)">
-          <input class="inp inp-sm" value="${ing.unit||'kg'}" placeholder="kg"
+          <input class="inp inp-sm" style="font-size:13px;padding:5px 8px;" value="${ing.unit||'kg'}" placeholder="kg"
             onchange="updateIng('${section}',${idx},'unit',this.value)">
-          <input class="inp inp-sm" type="number" value="${ing.tMin!=null?ing.tMin:''}" placeholder="t="
+          <input class="inp inp-sm" style="font-size:13px;padding:5px 8px;" type="number" value="${ing.tMin!=null?ing.tMin:''}" placeholder="t="
             title="Addition time: t=60 = start of boil, t=0 = flameout"
             onchange="updateIng('${section}',${idx},'tMin',+this.value)">
           <button class="del-btn" onclick="removeIng('${section}',${idx})">✕</button>
         </div>
-        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+        <div style="display:flex;align-items:center;gap:6px;margin-top:4px;">
           ${batches.length>0
-            ? `<select class="inp inp-sm" style="flex:1;min-width:160px;" onchange="selectIngBatch('${section}',${idx},this.value)">${batchOpts}</select>`
-            : `<input class="inp inp-sm" style="flex:1;min-width:160px;" value="${ing.batchNo||rm?.lastBatchNo||''}" placeholder="Batch no."
+            ? `<select class="inp inp-sm" style="flex:1;min-width:0;font-size:12px;padding:4px 8px;" onchange="selectIngBatch('${section}',${idx},this.value)">${batchOpts}</select>`
+            : `<input class="inp inp-sm" style="flex:1;min-width:0;font-size:12px;padding:4px 8px;" value="${ing.batchNo||rm?.lastBatchNo||''}" placeholder="Batch no."
                 onchange="updateIng('${section}',${idx},'batchNo',this.value)">`}
-          ${picked?.alphaAcid!=null?`<span style="font-size:11px;color:var(--muted);">AA: <strong>${picked.alphaAcid}%</strong></span>`:''}
+          ${picked?.alphaAcid!=null?`<span style="font-size:13px;font-weight:700;color:var(--accent);white-space:nowrap;">AA ${picked.alphaAcid}%</span>`:'<span style="font-size:11px;color:var(--red);white-space:nowrap;">⚠ No AA% on file</span>'}
         </div>
       </div>`;
-    }).join('') + (canEdit?`<button class="btn btn-ghost btn-sm" style="margin-top:4px;" onclick="addIng('hops','Hops')">+ Add Hop</button>`:'');
+    }).join('') + (canEdit?`<button class="btn btn-ghost btn-sm" style="margin-top:6px;" onclick="addIng('hops','Hops')">+ Add Hop</button>`:'');
   }
 
   // ── Boil additions (adjuncts added during boil) ───────────────────────────
@@ -1454,23 +1458,23 @@ function renderBrewDetail(id) {
           <span style="font-size:13px;color:var(--muted);">${ing.qty||0} ${ing.unit||''} · t=${ing.tMin!=null?ing.tMin:'—'} min</span>
         </div>`;
       }
-      return `<div style="background:var(--bg);border-radius:8px;padding:10px;margin-bottom:8px;">
+      return `<div style="padding:7px 0;border-bottom:1px solid var(--border);">
         <div class="ba-row">
-          <select class="inp inp-sm" onchange="updateIng('${section}',${idx},'rmId',this.value);updateIngUnit('${section}',${idx},this)">
+          <select class="inp inp-sm" style="font-size:13px;padding:5px 8px;" onchange="updateIng('${section}',${idx},'rmId',this.value);updateIngUnit('${section}',${idx},this)">
             <option value="">— select from Raw Materials —</option>
             ${rmOpts.replace(`value="${ing.rmId}"`,`value="${ing.rmId}" selected`)}
           </select>
-          <input class="inp inp-sm" type="number" step="0.01" value="${ing.qty||''}" placeholder="qty"
+          <input class="inp inp-sm" style="font-size:13px;padding:5px 8px;" type="number" step="0.01" value="${ing.qty||''}" placeholder="qty"
             onchange="updateBoilAdd(${id},${idx},'qty',+this.value)">
-          <input class="inp inp-sm" value="${ing.unit||'g'}" placeholder="g/kg" readonly
+          <input class="inp inp-sm" style="font-size:13px;padding:5px 8px;" value="${ing.unit||'g'}" placeholder="g/kg" readonly
             onchange="updateBoilAdd(${id},${idx},'unit',this.value)">
-          <input class="inp inp-sm" type="number" value="${ing.tMin!=null?ing.tMin:''}" placeholder="t="
+          <input class="inp inp-sm" style="font-size:13px;padding:5px 8px;" type="number" value="${ing.tMin!=null?ing.tMin:''}" placeholder="t="
             title="t=60 = start of boil, t=0 = flameout"
             onchange="updateBoilAdd(${id},${idx},'tMin',+this.value)">
           <button class="del-btn" onclick="removeBoilAdd(${id},${idx})">✕</button>
         </div>
       </div>`;
-    }).join('') + (canEdit?`<button class="btn btn-ghost btn-sm" style="margin-top:4px;" onclick="addBoilAdd(${id})">+ Add</button>`:'');
+    }).join('') + (canEdit?`<button class="btn btn-ghost btn-sm" style="margin-top:6px;" onclick="addBoilAdd(${id})">+ Add</button>`:'');
   }
 
   // ── Mash step row builder ─────────────────────────────────────────────────
