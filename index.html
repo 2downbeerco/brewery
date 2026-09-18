@@ -1878,7 +1878,7 @@ function renderBrewDetail(id) {
             const tankId = log.tank || log.execution?.fvTank || null;
             const tank = tankId ? state.tanks.find(t=>t.id===tankId) : null;
             if (tank && tank.beer===log.beer && String(tank.batchNo||'').replace(/^0+/,'')===String(log.batchNo||'').replace(/^0+/,'')) {
-              gravityRows = state.gravityLogs[tankId] || [];
+              gravityRows = buildTankGravityHistory(tank);
               isLive = true;
             }
           }
@@ -3507,7 +3507,7 @@ function saveTank(){
 }
 
 function showArchivePrompt(tankId, tank, newObj) {
-  const gLog = state.gravityLogs[tankId] || [];
+  const gLog = buildTankGravityHistory(tank);
   const beerLabel = (state.beers.find(b=>b.code===tank.beer)?.name||tank.beer) + (tank.batchNo?' Batch '+tank.batchNo:'');
   const div = document.createElement('div');
   div.id = 'archive-overlay';
@@ -3535,6 +3535,28 @@ function showArchivePrompt(tankId, tank, newObj) {
   window._pendingTankClear = { tankId, newObj };
 }
 
+// Builds the FULL gravity/lifecycle history for a tank — its own logged
+// readings (Fermenting/Conditioning, via addGravityLog) PLUS a synthesized
+// entry for the Carbonating-stage FG reading, which is stored separately
+// on the tank (tank.fgPlato) rather than as an entry in its gravity log
+// array. Used both when archiving (so the FG reading doesn't get lost —
+// it never made it into gravityLog before) and for the live view of a
+// batch that hasn't been archived yet, so both cases show the same
+// complete Fermenting → Conditioning → Carbonating picture consistently.
+function buildTankGravityHistory(tank) {
+  const base = (state.gravityLogs[tank.id] || []).slice();
+  if (tank.fgPlato != null) {
+    base.push({
+      date: tank.carbonationDate || tank.since || '',
+      stage: 'Carbonating',
+      plato: tank.fgPlato,
+      temp: tank.temp!=null ? tank.temp : null,
+      note: 'FG reading',
+    });
+  }
+  return base.sort((a,b)=>(a.date||'').localeCompare(b.date||''));
+}
+
 function clearTankNoArchive(tankId) {
   document.getElementById('archive-overlay')?.remove();
   const { newObj } = window._pendingTankClear || {};
@@ -3551,7 +3573,7 @@ function archiveAndClearTank(tankId) {
   if(!newObj) return;
   const tank = state.tanks.find(x=>x.id===tankId);
   if(!tank) return;
-  const gLog = state.gravityLogs[tankId] || [];
+  const gLog = buildTankGravityHistory(tank);
 
   // Try to find the ORIGINAL brew log for this batch — the one created via
   // Recipe → In Progress → Complete Brew, which already holds the full
