@@ -1865,43 +1865,6 @@ function renderBrewDetail(id) {
             </div>
           </div>
         </div>` : ''}
-        ${(()=>{
-          // If the batch has already been archived (Transfer to Cold Room),
-          // log.gravityLog holds the readings directly. But a batch that's
-          // still Ready and sitting in its tank hasn't been archived yet —
-          // the readings still exist, just live on the tank's own gravity
-          // log rather than copied over. Fall back to that so the readings
-          // are visible before archiving, not just after.
-          let gravityRows = log.gravityLog;
-          let isLive = false;
-          if (!gravityRows || !gravityRows.length) {
-            const tankId = log.tank || log.execution?.fvTank || null;
-            const tank = tankId ? state.tanks.find(t=>t.id===tankId) : null;
-            if (tank && tank.beer===log.beer && String(tank.batchNo||'').replace(/^0+/,'')===String(log.batchNo||'').replace(/^0+/,'')) {
-              gravityRows = buildTankGravityHistory(tank);
-              isLive = true;
-            }
-          }
-          if (!gravityRows || !gravityRows.length) return '';
-          return `
-        <div class="form-group" style="grid-column:1/-1;">
-          <div style="background:var(--bg);border-radius:8px;padding:10px 12px;margin-top:4px;">
-            <div style="font-size:13px;font-weight:700;margin-bottom:8px;color:var(--text);">
-              Gravity Readings <span style="font-weight:400;color:var(--muted);">(${isLive?'live from':'archived from'} ${log.tankName||'tank'})</span>
-            </div>
-            <div class="tbl-wrap"><table class="tbl" style="font-size:13px;">
-              <thead><tr><th>Date</th><th>Stage</th><th>°Plato</th><th>Temp (°C)</th><th>Notes</th></tr></thead>
-              <tbody>${gravityRows.map(g=>`<tr>
-                <td>${fmtDate(g.date)}</td>
-                <td>${g.stage?`<span style="font-size:11px;font-weight:600;color:${stageColors[g.stage]||'var(--muted)'};">${g.stage}</span>`:'<span style="color:var(--muted);">—</span>'}</td>
-                <td>${g.plato!=null||g.sg!=null?`<strong>${g.plato||g.sg}°P</strong>`:'—'}</td>
-                <td>${g.temp!=null?g.temp+'°C':'—'}</td>
-                <td style="color:var(--muted);">${g.note||''}</td>
-              </tr>`).join('')}</tbody>
-            </table></div>
-          </div>
-        </div>`;
-        })()}
       </div>
     </div>` : ''}
 
@@ -2018,6 +1981,43 @@ function renderBrewDetail(id) {
 
       <!-- Brew Day Checklist -->
       ${viewingInProgress ? ipChecklist() : ''}
+
+      <!-- Gravity Readings -->
+      ${(()=>{
+        // If the batch has already been archived (Transfer to Cold Room),
+        // log.gravityLog holds the readings directly. But a batch that's
+        // still in a tank hasn't been archived yet — the readings still
+        // exist, just live on the tank's own gravity log rather than
+        // copied over. Fall back to that so the readings are visible
+        // before archiving, not just after. Shown for any status (not
+        // just Completed) — In Progress brews can already have readings
+        // logged too.
+        let gravityRows = log.gravityLog;
+        let isLive = false;
+        if (!gravityRows || !gravityRows.length) {
+          const tankId = log.tank || log.execution?.fvTank || null;
+          const tank = tankId ? state.tanks.find(t=>t.id===tankId) : null;
+          if (tank && tank.beer===log.beer && String(tank.batchNo||'').replace(/^0+/,'')===String(log.batchNo||'').replace(/^0+/,'')) {
+            gravityRows = buildTankGravityHistory(tank);
+            isLive = true;
+          }
+        }
+        if (!gravityRows || !gravityRows.length) return '';
+        return `
+      <div class="brew-section" style="grid-column:1/-1;">
+        <div class="brew-section-title">📊 Gravity Readings <span style="font-weight:400;color:var(--muted);font-size:12px;">(${isLive?'live from':'archived from'} ${log.tankName||'tank'})</span></div>
+        <div class="tbl-wrap"><table class="tbl" style="font-size:13px;">
+          <thead><tr><th>Date</th><th>Stage</th><th>°Plato</th><th>Temp (°C)</th><th>Notes</th></tr></thead>
+          <tbody>${gravityRows.map(g=>`<tr>
+            <td>${fmtDate(g.date)}</td>
+            <td>${g.stage?`<span style="font-size:11px;font-weight:600;color:${stageColors[g.stage]||'var(--muted)'};">${g.stage}</span>`:'<span style="color:var(--muted);">—</span>'}</td>
+            <td>${g.plato!=null||g.sg!=null?`<strong>${g.plato||g.sg}°P</strong>`:'—'}</td>
+            <td>${g.temp!=null?g.temp+'°C':'—'}</td>
+            <td style="color:var(--muted);">${g.note||''}</td>
+          </tr>`).join('')}</tbody>
+        </table></div>
+      </div>`;
+      })()}
 
       <!-- Notes -->
       <div class="brew-section" style="grid-column:1/-1;">
