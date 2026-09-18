@@ -3282,15 +3282,15 @@ function confirmTransferToTank() {
     logBrewEvent(source.beer, source.batchNo, 'transfer-tank', `Transferred ${vol}L from ${source.name} to ${state.tanks[di].name} (${destStage})`);
   }
 
-  saveState();
-  if (source.beer) pushBatchSizeCorrection(source.beer, strippedBatchNo, correctedVol);
-
   // If this batch was already visible in bar order (had been Ready before),
   // and the destination stage isn't Ready, computeBreweryBeers() won't
-  // include it in this sync cycle — leaving bar order's record still
-  // pointing at the now-empty source tank, which its own deactivation
-  // check would then wrongly mark inactive. Fix the tank reference directly
-  // so that never happens, regardless of the destination stage.
+  // include it in the upcoming sync — leaving bar order's record still
+  // pointing at the source tank, which is about to show vol=0. This MUST
+  // run before saveState() below, not after — its own deactivation check
+  // runs as part of that save, and once something is marked inactive this
+  // relink deliberately won't touch it (to avoid undoing a real
+  // deactivation), so fixing the tank reference has to happen first,
+  // pre-empting the wrong deactivation rather than un-doing it afterward.
   if (source.stage === 'Ready' && destStage !== 'Ready' && source.beer) {
     queueBreweryBeersUpdate((current) => {
       const idx = current.findIndex(b => b.beer===source.beer && String(b.batch).replace(/^0+/,'')===String(strippedBatchNo).replace(/^0+/,''));
@@ -3300,6 +3300,9 @@ function confirmTransferToTank() {
       return current;
     }, `relinking ${source.beer} batch ${strippedBatchNo} to new tank`);
   }
+
+  saveState();
+  if (source.beer) pushBatchSizeCorrection(source.beer, strippedBatchNo, correctedVol);
 
   closeTankDetail();
   toast(`${vol}L transferred from ${source.name} to ${state.tanks[di].name}`);
