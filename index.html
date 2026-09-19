@@ -142,8 +142,8 @@
   .brew-list-item.active-brew { border-color: var(--accent); background: var(--accent-bg); }
 
   .brew-detail { width: 100%; }
-  .brew-sheet { display: flex; flex-wrap: wrap; gap: 20px; align-items: flex-start; width: 100%; }
-  .brew-sheet > .brew-section { flex: 1 1 400px; min-width: 0; }
+  .brew-sheet { display: grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); gap: 20px; align-items: start; width: 100%; }
+  .brew-sheet > .brew-section { min-width: 0; }
   .ba-row { display: grid; grid-template-columns: 1fr 70px 60px 60px 24px; gap: 6px; align-items: center; }
   .brew-section { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 20px; }
   .brew-section-title { font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 14px; display: flex; align-items: center; justify-content: space-between; }
@@ -185,7 +185,7 @@
     .topbar-date { display: none; }
     .stat-num { font-size: 26px; }
     .form-row-2, .form-row-3 { grid-template-columns: 1fr; }
-    .brew-sheet > .brew-section { flex-basis: 100% !important; }
+    .brew-sheet { grid-template-columns: 1fr !important; }
     /* Brew Log detail view (Recipe / In Progress / Completed) uses many
        ad-hoc inline grid layouts with fixed pixel columns for ingredient
        rows, mash steps, and header fields — these don't reflow on narrow
@@ -890,27 +890,6 @@ function renderBrewList() {
     </div>`;
 }
 
-// TEMPORARY diagnostic — measures actual rendered widths of the Recipe
-// grid's ancestor chain, to find exactly where width is being lost.
-// Remove once the layout issue is resolved.
-// Forces .brew-sheet to match its parent's actual measured width — a
-// fallback fix since width:100% alone wasn't taking effect reliably in
-// this specific flex layout context.
-function fixBrewSheetWidth() {
-  const applyFix = () => {
-    const sheet = document.querySelector('.brew-sheet');
-    const parent = document.querySelector('.brew-detail');
-    if (!sheet || !parent) return;
-    const w = parent.getBoundingClientRect().width;
-    if (w > 0) sheet.style.width = w + 'px';
-  };
-  applyFix();
-  if (!window._brewSheetResizeBound) {
-    window.addEventListener('resize', applyFix);
-    window._brewSheetResizeBound = true;
-  }
-}
-
 function newBrewLog() {
   const id = state.nextBrewId++;
   const today = new Date().toISOString().slice(0,10);
@@ -1564,7 +1543,7 @@ function renderBrewDetail(id) {
         <span style="color:${ok?'var(--green)':'var(--red)'};">${rm.category==='Malt'?`Brewery: ${avail} ${rm.unit}`:`Have ${avail} ${rm.unit}`} ${ok?'✓':'⚠️ short'}</span>
       </div>`;
     }).join('');
-    return rows ? `<div class="brew-section" style="flex-basis:100%;">
+    return rows ? `<div class="brew-section" style="grid-column:1/-1;">
       <div class="brew-section-title">Stock Availability Check</div>${rows}</div>` : '';
   }
 
@@ -1891,25 +1870,24 @@ function renderBrewDetail(id) {
               <div><div style="font-size:10px;color:var(--muted);text-transform:uppercase;">Final Temp</div><div>${log.finalTemp!=null?log.finalTemp+'°C':'—'}</div></div>
             </div>
           </div>
-        </div>` : ''}
+        </div>` : ''}` : ''}
       </div>
-    </div>` : ''}
+    </div>
 
     <!-- ── RECIPE GRID ── -->
-    <img src="x" onerror="this.remove();fixBrewSheetWidth()" style="display:none">
     <div class="brew-sheet">
 
-      <div class="brew-section" style="flex:1 1 400px;min-width:0;">
+      <div class="brew-section">
         <div class="brew-section-title">🌾 Grain Bill</div>
         ${ingRows('grains', log.grains, ['Malt'])}
       </div>
 
-      <div class="brew-section" style="flex:1 1 400px;min-width:0;">
+      <div class="brew-section">
         <div class="brew-section-title">🌿 Hops <span style="font-size:10px;font-weight:400;color:var(--muted);">(boil time = 60 min; t=60 is start of boil)</span></div>
         ${ingRowsHops('hops', log.hops)}
       </div>
 
-      <div class="brew-section" style="flex:1 1 400px;min-width:0;">
+      <div class="brew-section">
         <div class="brew-section-title">🧫 Yeast</div>
         <div class="form-group" style="margin-bottom:10px;">
           <label class="lbl">Yeast Form</label>
@@ -1922,18 +1900,18 @@ function renderBrewDetail(id) {
         ${ingRows('yeast', log.yeast, ['Yeast'])}
       </div>
 
-      <div class="brew-section" style="flex:1 1 400px;min-width:0;">
+      <div class="brew-section">
         <div class="brew-section-title">⚗️ Adjuncts / Salts++</div>
         ${ingRows('other', log.other, ['Salts++','Adjuncts','Gases'])}
       </div>
 
-      <div class="brew-section" style="flex:1 1 400px;min-width:0;">
+      <div class="brew-section">
         <div class="brew-section-title">🫙 Boil Additions <span style="font-size:10px;font-weight:400;color:var(--muted);">(adjuncts added during boil)</span></div>
         ${ingRowsBoilAdd('boilAdd', log.boilAdd||[])}
       </div>
 
       <!-- ── MASH PROCESS PARAMETERS ── -->
-      <div class="brew-section" style="flex-basis:100%;">
+      <div class="brew-section" style="grid-column:1/-1;">
         <div class="brew-section-title">⚙️ Mash Process</div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
           <div>
@@ -2032,7 +2010,7 @@ function renderBrewDetail(id) {
         }
         if (!gravityRows || !gravityRows.length) return '';
         return `
-      <div class="brew-section" style="flex-basis:100%;"> <span style="font-weight:400;color:var(--muted);font-size:12px;">(${isLive?'live from':'archived from'} ${log.tankName||'tank'})</span></div>
+      <div class="brew-section" style="grid-column:1/-1;"> <span style="font-weight:400;color:var(--muted);font-size:12px;">(${isLive?'live from':'archived from'} ${log.tankName||'tank'})</span></div>
         <div class="tbl-wrap"><table class="tbl" style="font-size:13px;">
           <thead><tr><th>Date</th><th>Stage</th><th>°Plato</th><th>Temp (°C)</th><th>Notes</th></tr></thead>
           <tbody>${gravityRows.map(g=>`<tr>
@@ -2048,7 +2026,7 @@ function renderBrewDetail(id) {
 
       <!-- Lifecycle Events -->
       ${log.events && log.events.length ? `
-      <div class="brew-section" style="flex-basis:100%;">
+      <div class="brew-section" style="grid-column:1/-1;">
         <div class="brew-section-title">🕒 Lifecycle Events</div>
         <div class="tbl-wrap"><table class="tbl" style="font-size:13px;">
           <thead><tr><th>Date</th><th>Event</th></tr></thead>
@@ -2060,7 +2038,7 @@ function renderBrewDetail(id) {
       </div>` : ''}
 
       <!-- Notes -->
-      <div class="brew-section" style="flex-basis:100%;">
+      <div class="brew-section" style="grid-column:1/-1;">
         <div class="brew-section-title">📝 Notes</div>
         <textarea class="inp" rows="4" placeholder="${viewingDraft?'Recipe notes, special instructions for brewer…':'Observations, issues, adjustments during brew day…'}" ${!canEdit?'disabled':''}
           onchange="updateLog(${id},'notes',this.value)">${log.notes||''}</textarea>
