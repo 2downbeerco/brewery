@@ -1679,7 +1679,7 @@ function renderBrewDetail(id) {
     // ── Step 7: Boil ──────────────────────────────────────────────────────
     const hopAdditions = (log.hops||[]).map((h,i)=>`
       <div style="display:grid;grid-template-columns:1fr 60px 80px 80px;gap:6px;align-items:center;margin-bottom:6px;">
-        <div style="font-size:13px;font-weight:600;">${h.name||'Hop '+(i+1)} <span style="font-size:11px;color:var(--muted);">${h.batchNo?'('+h.batchNo+')':''}</span></div>
+        <div style="font-size:13px;font-weight:600;">${h.name||'Hop '+(i+1)} <span style="font-size:11px;color:var(--muted);">${h.batchNo?'('+h.batchNo+')':''}${h.alphaAcid!=null?' · AA '+h.alphaAcid+'%':''}</span></div>
         ${tf('hop_'+i+'_t','t= (min)','60',true)}
         ${tn('hop_'+i+'_qty','Qty ('+( h.unit||'kg')+')',h.qty||'','0.001')}
         ${tf('hop_'+i+'_actualTime','Actual Time','HH:MM')}
