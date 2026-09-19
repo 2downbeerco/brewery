@@ -3981,24 +3981,40 @@ function renderRMInventory() {
 
 
 // ── Purchase Orders ────────────────────────────────────────────────────────────
+function togglePOUnpaidFilter() {
+  window._poUnpaidFilter = !window._poUnpaidFilter;
+  renderContent();
+}
+
 function renderPOList() {
-  const pos = [...state.purchaseOrders].sort((a,b)=>b.orderDate.localeCompare(a.orderDate));
+  const allPos = [...state.purchaseOrders].sort((a,b)=>b.orderDate.localeCompare(a.orderDate));
   const statusClass = { Received:'badge-green', 'Partially Received':'badge-orange' };
-  const unpaidTotal = pos.filter(p=>!p.paid).reduce((s,p)=>{
+  const unpaidPos = allPos.filter(p=>!p.paid);
+  const unpaidTotal = unpaidPos.reduce((s,p)=>{
     const t=p.items.reduce((x,i)=>x+(i.qty*i.unitCost),0);
     const g=p.items.reduce((x,i)=>x+(i.qty*i.unitCost*(i.gst/100)),0);
     return s+t+g+(p.deliveryCharge||0)+((p.deliveryCharge||0)*(p.deliveryGstPct||0)/100);
   },0);
+  const filterActive = !!window._poUnpaidFilter;
+  const pos = filterActive ? unpaidPos : allPos;
 
   return `
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:12px;">
-      ${unpaidTotal>0?`<div style="background:#FEF3C7;border:1px solid #F59E0B;border-radius:8px;padding:8px 14px;font-size:13px;color:#92400E;">
-        💰 Outstanding: <strong>₹${unpaidTotal.toFixed(2)}</strong> unpaid across ${pos.filter(p=>!p.paid).length} PO${pos.filter(p=>!p.paid).length!==1?'s':''}
+      ${unpaidTotal>0?`<div onclick="togglePOUnpaidFilter()" title="${filterActive?'Click to show all POs':'Click to show only unpaid POs'}"
+        style="background:#FEF3C7;border:1.5px solid ${filterActive?'var(--accent)':'#F59E0B'};border-radius:8px;padding:8px 14px;font-size:13px;color:#92400E;cursor:pointer;display:flex;align-items:center;gap:8px;transition:box-shadow 0.15s;"
+        onmouseover="this.style.boxShadow='0 2px 8px rgba(0,0,0,0.1)'" onmouseout="this.style.boxShadow='none'">
+        💰 Outstanding: <strong>₹${unpaidTotal.toFixed(2)}</strong> unpaid across ${unpaidPos.length} PO${unpaidPos.length!==1?'s':''}
+        <span style="font-size:11px;font-weight:600;opacity:0.75;">${filterActive?'· showing unpaid only ✕':'· view →'}</span>
       </div>`:'<div></div>'}
       <button class="btn btn-primary" onclick="openNewPO()">+ New Purchase Order</button>
     </div>
 
-    ${pos.length===0?`<div class="empty" style="background:var(--surface);border:1px solid var(--border);border-radius:12px;">No purchase orders yet.</div>`
+    ${filterActive?`<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;font-size:13px;color:var(--muted);">
+      Showing ${unpaidPos.length} unpaid PO${unpaidPos.length!==1?'s':''} only
+      <button class="btn btn-ghost btn-sm" onclick="togglePOUnpaidFilter()">Clear filter</button>
+    </div>`:''}
+
+    ${pos.length===0?`<div class="empty" style="background:var(--surface);border:1px solid var(--border);border-radius:12px;">${filterActive?'No unpaid purchase orders.':'No purchase orders yet.'}</div>`
     : pos.map(po=>{
         const total = po.items.reduce((s,i)=>s+(i.qty*i.unitCost),0);
         const gst   = po.items.reduce((s,i)=>s+(i.qty*i.unitCost*(i.gst/100)),0);
