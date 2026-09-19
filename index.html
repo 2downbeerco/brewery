@@ -1553,7 +1553,7 @@ function renderBrewDetail(id) {
 
     // Helper: step card
     function stepCard(icon, title, done, content) {
-      return `<div class="ip-step-card" style="border:1.5px solid var(--border);border-radius:10px;padding:16px;margin-bottom:14px;background:var(--surface);">
+      return `<div class="ip-step-card" style="border:1.5px solid var(--border);border-radius:10px;padding:16px;background:var(--surface);">
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:${content?'14px':'0'};">
           <span style="font-size:14px;font-weight:700;">${icon} ${title}</span>
         </div>
@@ -1745,7 +1745,9 @@ function renderBrewDetail(id) {
 
     return `<div style="grid-column:1/-1;">
       <div style="font-size:15px;font-weight:700;margin-bottom:16px;">🗓️ Brew Day Execution</div>
-      ${s2}${s3}${s5}${s6}${s7}${s8}${s9}${s10}
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(400px,1fr));gap:14px;align-items:start;">
+        ${s2}${s3}${s5}${s6}${s7}${s8}${s9}${s10}
+      </div>
     </div>`;
   }
 
