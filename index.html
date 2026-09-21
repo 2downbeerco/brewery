@@ -3705,7 +3705,7 @@ function renderRaw() {
   return `
     <div style="display:flex;gap:8px;margin-bottom:20px;">
       <button class="btn btn-sm ${subTab==='inventory'?'btn-primary':'btn-ghost'}" onclick="setRMSubTab('inventory')">📦 Inventory</button>
-      <button class="btn btn-sm ${subTab==='po'?'btn-primary':'btn-ghost'}" onclick="setRMSubTab('po')">🧾 Purchase Orders</button>
+      <button class="btn btn-sm ${subTab==='po'?'btn-primary':'btn-ghost'}" onclick="setRMSubTab('po')">🧾 Invoices</button>
       <button class="btn btn-sm ${subTab==='stocktake'?'btn-primary':'btn-ghost'}" onclick="setRMSubTab('stocktake')">📊 Stock Take</button>
     </div>
     ${subTab==='inventory' ? renderRMInventory() : subTab==='po' ? renderPOList() : renderStockTake()}
@@ -3778,7 +3778,7 @@ function renderRMInventory() {
       <div style="display:flex;gap:8px;flex-wrap:wrap;">${cats.map(c=>`<button class="btn btn-sm ${filter===c?'btn-primary':'btn-ghost'}" onclick="setRMFilter('${c}')">${c}</button>`).join('')}</div>
       <div style="display:flex;gap:8px;">
         <button class="btn btn-ghost" onclick="openAddRM()">+ Add Item</button>
-        <button class="btn btn-primary" onclick="setRMSubTab('po')">+ Purchase Order</button>
+        <button class="btn btn-primary" onclick="setRMSubTab('po')">+ Invoice</button>
       </div>
     </div>
 
@@ -3817,7 +3817,7 @@ function renderRMInventory() {
                 <button class="btn btn-primary btn-sm" onclick="openAddBatch(${r.id})">+ Add Batch</button>
               </div>
             </div>
-            ${batches.length===0?`<div style="color:var(--muted);font-size:13px;">No batches recorded. Add one via Purchase Order or manually.</div>`:`
+            ${batches.length===0?`<div style="color:var(--muted);font-size:13px;">No batches recorded. Add one via Invoice or manually.</div>`:`
             <div class="tbl-wrap"><table class="tbl" style="font-size:13px;">
               <thead><tr>
                 <th>Batch No.</th>
@@ -3980,7 +3980,7 @@ function renderRMInventory() {
 }
 
 
-// ── Purchase Orders ────────────────────────────────────────────────────────────
+// ── Invoices (formerly "Purchase Orders" — internal names below still say PO) ──
 function togglePOUnpaidFilter() {
   window._poUnpaidFilter = !window._poUnpaidFilter;
   renderContent();
@@ -4000,21 +4000,21 @@ function renderPOList() {
 
   return `
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:12px;">
-      ${unpaidTotal>0?`<div onclick="togglePOUnpaidFilter()" title="${filterActive?'Click to show all POs':'Click to show only unpaid POs'}"
+      ${unpaidTotal>0?`<div onclick="togglePOUnpaidFilter()" title="${filterActive?'Click to show all invoices':'Click to show only unpaid invoices'}"
         style="background:#FEF3C7;border:1.5px solid ${filterActive?'var(--accent)':'#F59E0B'};border-radius:8px;padding:8px 14px;font-size:13px;color:#92400E;cursor:pointer;display:flex;align-items:center;gap:8px;transition:box-shadow 0.15s;"
         onmouseover="this.style.boxShadow='0 2px 8px rgba(0,0,0,0.1)'" onmouseout="this.style.boxShadow='none'">
-        💰 Outstanding: <strong>₹${unpaidTotal.toFixed(2)}</strong> unpaid across ${unpaidPos.length} PO${unpaidPos.length!==1?'s':''}
+        💰 Outstanding: <strong>₹${unpaidTotal.toFixed(2)}</strong> unpaid across ${unpaidPos.length} Invoice${unpaidPos.length!==1?'s':''}
         <span style="font-size:11px;font-weight:600;opacity:0.75;">${filterActive?'· showing unpaid only ✕':'· view →'}</span>
       </div>`:'<div></div>'}
-      <button class="btn btn-primary" onclick="openNewPO()">+ New Purchase Order</button>
+      <button class="btn btn-primary" onclick="openNewPO()">+ New Invoice</button>
     </div>
 
     ${filterActive?`<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;font-size:13px;color:var(--muted);">
-      Showing ${unpaidPos.length} unpaid PO${unpaidPos.length!==1?'s':''} only
+      Showing ${unpaidPos.length} unpaid Invoice${unpaidPos.length!==1?'s':''} only
       <button class="btn btn-ghost btn-sm" onclick="togglePOUnpaidFilter()">Clear filter</button>
     </div>`:''}
 
-    ${pos.length===0?`<div class="empty" style="background:var(--surface);border:1px solid var(--border);border-radius:12px;">${filterActive?'No unpaid purchase orders.':'No purchase orders yet.'}</div>`
+    ${pos.length===0?`<div class="empty" style="background:var(--surface);border:1px solid var(--border);border-radius:12px;">${filterActive?'No unpaid invoices.':'No invoices yet.'}</div>`
     : pos.map(po=>{
         const total = po.items.reduce((s,i)=>s+(i.qty*i.unitCost),0);
         const gst   = po.items.reduce((s,i)=>s+(i.qty*i.unitCost*(i.gst/100)),0);
@@ -4023,7 +4023,7 @@ function renderPOList() {
         <div class="card" style="margin-bottom:12px;">
           <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap;">
             <div style="cursor:pointer;flex:1;" onclick="openViewPO(${po.id})">
-              <div style="font-size:15px;font-weight:700;">PO #${po.id} — ${po.vendor}</div>
+              <div style="font-size:15px;font-weight:700;">Invoice ${po.invoiceNo?'#'+po.invoiceNo:'#'+po.id} — ${po.vendor}</div>
               <div style="font-size:13px;color:var(--muted);margin-top:3px;">Ordered: ${fmtDate(po.orderDate)}${po.deliveryDate?' · Received: '+fmtDate(po.deliveryDate):''}</div>
               <div style="font-size:13px;color:var(--muted);margin-top:2px;">${po.items.length} item${po.items.length!==1?'s':''}: ${po.items.map(i=>i.name).join(', ')}</div>
             </div>
@@ -4042,14 +4042,15 @@ function renderPOList() {
           </div>
         </div>`;}).join('')}
 
-    <!-- New/View PO Modal -->
+    <!-- New/View Invoice Modal -->
     <div id="po-modal" class="modal-overlay" style="display:none;" onclick="if(event.target===this)closePOModal()">
       <div class="modal-box" style="max-width:700px;">
-        <div class="modal-title" id="po-modal-title">New Purchase Order</div>
+        <div class="modal-title" id="po-modal-title">New Invoice</div>
         <input type="hidden" id="po-id">
 
-        <div class="form-row form-row-2" style="margin-bottom:16px;">
+        <div class="form-row form-row-3" style="margin-bottom:16px;">
           <div class="form-group"><label class="lbl">Vendor / Supplier</label><input class="inp" id="po-vendor" placeholder="e.g. XYZ Suppliers"></div>
+          <div class="form-group"><label class="lbl">Invoice No.</label><input class="inp" id="po-invoice-no" placeholder="e.g. INV-1042"></div>
           <div class="form-group"><label class="lbl">Order Date</label><input class="inp" id="po-order-date" type="date"></div>
         </div>
 
@@ -4541,7 +4542,7 @@ function applyAdj(){
 }
 
 
-// ── Purchase Order helpers ────────────────────────────────────────────────────
+// ── Invoice helpers (internal names below still say PO) ────────────────────────
 let _poItems = [];
 const CAT_OPTIONS = ['Malt','Hops','Yeast','Salts++','Adjuncts','Gases','Cleaning','Other'];
 const UNIT_OPTIONS = ['kg','g','L','ml','pkt','bag','drum','bottle','#','other'];
@@ -4552,9 +4553,10 @@ function _setPOReceiveBtn(status) {
 
 function openNewPO(){
   _poItems=[{name:'',category:'Malt',unit:'kg',qty:0,unitCost:0,gst:18}];
-  document.getElementById('po-modal-title').textContent='New Purchase Order';
+  document.getElementById('po-modal-title').textContent='New Invoice';
   document.getElementById('po-id').value='';
   document.getElementById('po-vendor').value='';
+  document.getElementById('po-invoice-no').value='';
   document.getElementById('po-order-date').value=new Date().toISOString().slice(0,10);
   document.getElementById('po-delivery-date').value='';
   document.getElementById('po-delivery-charge').value='0';
@@ -4569,9 +4571,10 @@ function openNewPO(){
 function openViewPO(id){
   const po=state.purchaseOrders.find(x=>x.id===id);if(!po)return;
   _poItems=po.items.map(i=>({...i}));
-  document.getElementById('po-modal-title').textContent=`PO #${po.id} — ${po.vendor}`;
+  document.getElementById('po-modal-title').textContent=`Invoice ${po.invoiceNo?'#'+po.invoiceNo:'#'+po.id} — ${po.vendor}`;
   document.getElementById('po-id').value=po.id;
   document.getElementById('po-vendor').value=po.vendor;
+  document.getElementById('po-invoice-no').value=po.invoiceNo||'';
   document.getElementById('po-order-date').value=po.orderDate;
   document.getElementById('po-delivery-date').value=po.deliveryDate||'';
   document.getElementById('po-delivery-charge').value=po.deliveryCharge||0;
@@ -4726,6 +4729,7 @@ function savePO(){
 
   const po={
     vendor,
+    invoiceNo:document.getElementById('po-invoice-no').value.trim(),
     orderDate:document.getElementById('po-order-date').value,
     deliveryDate:document.getElementById('po-delivery-date').value,
     deliveryCharge:+document.getElementById('po-delivery-charge').value||0,
@@ -4825,12 +4829,12 @@ function savePO(){
   }
 
   saveState();closePOModal();renderContent();
-  toast(`✓ PO saved & stock updated for ${validItems.length} item(s)`);
+  toast(`✓ Invoice saved & stock updated for ${validItems.length} item(s)`);
 }
 
 function deletePO(){
   const id=+document.getElementById('po-id').value;
-  if(!confirm('Delete this PO?'))return;
+  if(!confirm('Delete this invoice?'))return;
   state.purchaseOrders=state.purchaseOrders.filter(x=>x.id!==id);
   saveState();closePOModal();renderContent();toast('Deleted');
 }
