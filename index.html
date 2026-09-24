@@ -4049,7 +4049,7 @@ function renderPOList() {
         <input type="hidden" id="po-id">
 
         <div class="form-row form-row-3" style="margin-bottom:16px;">
-          <div class="form-group"><label class="lbl">Vendor / Supplier</label><input class="inp" id="po-vendor" placeholder="e.g. XYZ Suppliers"></div>
+          <div class="form-group"><label class="lbl">Vendor / Supplier</label><input class="inp" id="po-vendor" list="po-vendor-list" placeholder="e.g. XYZ Suppliers"><datalist id="po-vendor-list"></datalist></div>
           <div class="form-group"><label class="lbl">Invoice No.</label><input class="inp" id="po-invoice-no" placeholder="e.g. INV-1042"></div>
           <div class="form-group"><label class="lbl">Order Date</label><input class="inp" id="po-order-date" type="date"></div>
         </div>
@@ -4551,6 +4551,14 @@ function _setPOReceiveBtn(status) {
   // no-op now — single save button always visible
 }
 
+// Populates the Vendor field's suggestion list from vendors used on past
+// invoices — this is the app's own autocomplete, not reliant on the
+// browser remembering what you've typed into this field before.
+function renderPOVendorList(){
+  const names = [...new Set(state.purchaseOrders.map(p=>(p.vendor||'').trim()).filter(Boolean))].sort();
+  document.getElementById('po-vendor-list').innerHTML = names.map(n=>`<option value="${n}">`).join('');
+}
+
 function openNewPO(){
   _poItems=[{name:'',category:'Malt',unit:'kg',qty:0,unitCost:0,gst:18}];
   document.getElementById('po-modal-title').textContent='New Invoice';
@@ -4563,6 +4571,7 @@ function openNewPO(){
   document.getElementById('po-delivery-gst').value='18';
   document.getElementById('po-status').value='Received';
   document.getElementById('po-delete').style.display='none';
+  renderPOVendorList();
   renderPOItems();
   updatePOTotals();
   document.getElementById('po-modal').style.display='flex';
@@ -4581,6 +4590,7 @@ function openViewPO(id){
   document.getElementById('po-delivery-gst').value=po.deliveryGstPct!=null?po.deliveryGstPct:18;
   document.getElementById('po-status').value=po.status||'Received';
   document.getElementById('po-delete').style.display='inline-flex';
+  renderPOVendorList();
   renderPOItems();
   updatePOTotals();
   document.getElementById('po-modal').style.display='flex';
