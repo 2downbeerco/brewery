@@ -518,13 +518,31 @@ function computeBreweryBeers() {
   return result;
 }
 
-function saveState() {
+// keys: which SYNC_KEYS this particular action actually changed, e.g.
+// saveState(['brewLogs']) or saveState(['tanks','beerInventory']). Pushing
+// every key on every save (the old default) meant a stale copy of some
+// UNRELATED key sitting in this tab — e.g. Tanks, if another device
+// changed it and this tab hasn't re-synced yet — got blindly re-pushed
+// and silently overwrote that other device's more recent change, the same
+// class of race the bar order app's saveKegs()/saveOrders()/saveBars() had.
+// Callers should always pass the exact key(s) touched; omitting `keys`
+// falls back to pushing everything, which stays correct for genuine bulk
+// operations (initial load / migration) but should not be the default for
+// a single-field edit.
+function saveState(keys) {
   // Recompute breweryBeers before syncing
   state.breweryBeers = computeBreweryBeers();
 
   window._lastLocalWrite = window._lastLocalWrite || {};
 
-  SYNC_KEYS.forEach(key => {
+  const dirtyKeys = (keys && keys.length) ? [...new Set(keys)] : [...SYNC_KEYS];
+  // breweryBeers is freshly recomputed from this tab's own current
+  // in-memory state just above (not a cached copy of something that could
+  // be stale on its own), and bar order's stock view depends on it being
+  // current, so it's always included regardless of what else changed.
+  if (!dirtyKeys.includes('breweryBeers')) dirtyKeys.push('breweryBeers');
+
+  dirtyKeys.forEach(key => {
     localStorage.setItem('brew_' + key, JSON.stringify(state[key]));
     window._lastLocalWrite[key] = Date.now();
     sbUpsertBrewKey(key, state[key]).catch(e => {
@@ -913,7 +931,7 @@ function newBrewLog() {
     status: 'Draft', inventoryDeducted: false,
   };
   state.brewLogs.push(log);
-  saveState();
+  saveState(['brewLogs']);
   window._openBrewId = id;
   renderNav();
   renderContent();
@@ -972,7 +990,7 @@ function copyBrewLog(sourceId) {
     status: 'Draft', inventoryDeducted: false,
   };
   state.brewLogs.push(log);
-  saveState();
+  saveState(['brewLogs']);
   closeCopyRecipeModal();
   window._openBrewId = id;
   renderNav();
@@ -1282,7 +1300,7 @@ function saveBrewEdits(id, btnEl) {
   // sync landing in between), which was making it look like the button
   // needed a second click to disappear.
   if (btnEl) btnEl.style.display = 'none';
-  saveState();
+  saveState(['brewLogs']);
   window._brewEditMode = false;
   renderContent();
   toast('Brew log saved');
@@ -2061,20 +2079,20 @@ function updateBoilAdd(id, idx, field, val) {
   if (i<0) return;
   if (!state.brewLogs[i].boilAdd) state.brewLogs[i].boilAdd = [];
   state.brewLogs[i].boilAdd[idx][field] = val;
-  saveState();
+  saveState(['brewLogs']);
 }
 function addBoilAdd(id) {
   const i = state.brewLogs.findIndex(b=>b.id===id);
   if (i<0) return;
   if (!state.brewLogs[i].boilAdd) state.brewLogs[i].boilAdd = [];
   state.brewLogs[i].boilAdd.push({name:'',qty:0,unit:'g',tMin:60});
-  saveState(); renderContent();
+  saveState(['brewLogs']); renderContent();
 }
 function removeBoilAdd(id, idx) {
   const i = state.brewLogs.findIndex(b=>b.id===id);
   if (i<0) return;
   state.brewLogs[i].boilAdd.splice(idx,1);
-  saveState(); renderContent();
+  saveState(['brewLogs']); renderContent();
 }
 
 function updateExField(id, key, val) {
@@ -2082,7 +2100,7 @@ function updateExField(id, key, val) {
   if (i<0) return;
   if (!state.brewLogs[i].execution) state.brewLogs[i].execution = {};
   state.brewLogs[i].execution[key] = val;
-  saveState();
+  saveState(['brewLogs']);
 }
 
 function toggleExStep(id, stepKey, val) {
@@ -2090,7 +2108,7 @@ function toggleExStep(id, stepKey, val) {
   if (i<0) return;
   if (!state.brewLogs[i].execution) state.brewLogs[i].execution = {};
   state.brewLogs[i].execution[stepKey] = val;
-  saveState(); renderContent();
+  saveState(['brewLogs']); renderContent();
 }
 
 function addExSample(id, sampleKey) {
@@ -2099,7 +2117,7 @@ function addExSample(id, sampleKey) {
   if (!state.brewLogs[i].execution) state.brewLogs[i].execution = {};
   if (!state.brewLogs[i].execution[sampleKey]) state.brewLogs[i].execution[sampleKey] = [];
   state.brewLogs[i].execution[sampleKey].push({});
-  saveState(); renderContent();
+  saveState(['brewLogs']); renderContent();
   // Safety net: if the immediate render above somehow doesn't land (the
   // first click on this button has been reported as sometimes needing to
   // be clicked twice, with no reproducible cause found in code review),
@@ -2112,7 +2130,7 @@ function removeExSample(id, sampleKey, idx) {
   const i = state.brewLogs.findIndex(b=>b.id===id);
   if (i<0) return;
   state.brewLogs[i].execution[sampleKey].splice(idx, 1);
-  saveState(); renderContent();
+  saveState(['brewLogs']); renderContent();
 }
 
 
@@ -2122,7 +2140,7 @@ function updateMashStep(id, stepKey, field, val) {
   if (!state.brewLogs[i].mash) state.brewLogs[i].mash = {};
   if (!state.brewLogs[i].mash[stepKey]) state.brewLogs[i].mash[stepKey] = {};
   state.brewLogs[i].mash[stepKey][field] = val;
-  saveState(); renderContent();
+  saveState(['brewLogs']); renderContent();
 }
 
 function updateBrewCheck(id, key, val) {
@@ -2130,7 +2148,7 @@ function updateBrewCheck(id, key, val) {
   if (i<0) return;
   if (!state.brewLogs[i].checks) state.brewLogs[i].checks = {};
   state.brewLogs[i].checks[key] = val;
-  saveState(); renderContent();
+  saveState(['brewLogs']); renderContent();
 }
 
 
@@ -2148,7 +2166,7 @@ function selectIngBatch(section, idx, batchNo) {
     if (b.extractLdk != null) ing.extractLdk = b.extractLdk;
     if (b.alphaAcid  != null) ing.alphaAcid  = b.alphaAcid;
   }
-  saveState(); renderContent();
+  saveState(['brewLogs']); renderContent();
 }
 
 function addIng(section, hintCat) {
@@ -2160,7 +2178,7 @@ function addIng(section, hintCat) {
   // pre-filled row also made it look like nothing happened on the first
   // click, since every new row displayed the exact same value.
   state.brewLogs[i][section].push({ rmId: '', name: '', qty: 0, unit: '' });
-  saveState(); renderContent();
+  saveState(['brewLogs']); renderContent();
 }
 
 function removeIng(section, idx) {
@@ -2168,7 +2186,7 @@ function removeIng(section, idx) {
   const i = state.brewLogs.findIndex(b=>b.id===id);
   if (i<0) return;
   state.brewLogs[i][section].splice(idx, 1);
-  saveState(); renderContent();
+  saveState(['brewLogs']); renderContent();
 }
 
 function updateIng(section, idx, field, val) {
@@ -2200,7 +2218,7 @@ function updateIng(section, idx, field, val) {
       }
     }
   }
-  saveState(); renderContent();
+  saveState(['brewLogs']); renderContent();
 }
 
 function updateIngUnit(section, idx, selectEl) {
@@ -2223,7 +2241,8 @@ function updateIngUnit(section, idx, selectEl) {
 // updates the brew log, the tank (if not the one currently being edited),
 // the cold room entry, and renames (not deletes) the bar order record.
 function cascadeBatchNoChange(beer, oldBatchNo, newBatchNo, targetTankId) {
-  if (!beer || oldBatchNo === newBatchNo) return;
+  const touched = []; // which SYNC_KEYS this call actually mutated, for the caller's saveState()
+  if (!beer || oldBatchNo === newBatchNo) return touched;
 
   const stripPrefix = (bn) => {
     bn = String(bn||'');
@@ -2247,6 +2266,7 @@ function cascadeBatchNoChange(beer, oldBatchNo, newBatchNo, targetTankId) {
     const ti = state.tanks.findIndex(t=>t.id===targetTankId);
     if (ti>=0 && state.tanks[ti].beer===beer && String(state.tanks[ti].batchNo||'').replace(/^0+/,'')===oldStripped) {
       state.tanks[ti].batchNo = newBatchNo;
+      touched.push('tanks');
     }
   }
 
@@ -2258,6 +2278,7 @@ function cascadeBatchNoChange(beer, oldBatchNo, newBatchNo, targetTankId) {
     const matches = state.beerInventory[invIdx].batches.filter(b=>String(b.batchNo).replace(/^0+/,'')===oldStripped);
     if (matches.length===1) {
       matches[0].batchNo = newStripped;
+      touched.push('beerInventory');
     } else if (matches.length>1) {
       console.warn(`cascadeBatchNoChange: ${matches.length} cold room batches match "${oldStripped}" for ${beer} — skipped, ambiguous`);
     }
@@ -2272,6 +2293,7 @@ function cascadeBatchNoChange(beer, oldBatchNo, newBatchNo, targetTankId) {
   // the placeholder is left stranded permanently.
   const searchOldBatch = oldStripped || '-CR';
   renameBrewBatchInKegs(beer, searchOldBatch, newStripped);
+  return touched;
 }
 
 function updateBatchNo(id, newVal) {
@@ -2284,9 +2306,9 @@ function updateBatchNo(id, newVal) {
   log.batchNo = newVal;
 
   const linkedTankId = log.tank || log.execution?.fvTank || null;
-  cascadeBatchNoChange(log.beer, oldVal, newVal, linkedTankId);
+  const touched = cascadeBatchNoChange(log.beer, oldVal, newVal, linkedTankId);
 
-  saveState(); renderContent();
+  saveState(['brewLogs', ...touched]); renderContent();
 }
 
 // A batch number correction touches FOUR separate places in the bar order
@@ -2395,15 +2417,17 @@ function updateLog(id, field, val) {
   // ever a one-time snapshot of the old Target Volume — they don't track
   // this field automatically. Keep the tank's volume equal to Target
   // Volume in that case.
+  let tankTouched = false;
   if (field === 'targetVol' && log.status === 'Completed' && log.tank) {
     const ti = state.tanks.findIndex(t=>t.id===log.tank);
     if (ti >= 0) {
       state.tanks[ti].vol = +val || 0;
       state.tanks[ti].batchVol = +val || 0;
+      tankTouched = true;
     }
   }
 
-  saveState();
+  saveState(tankTouched ? ['brewLogs','tanks'] : ['brewLogs']);
   // Only re-render if not a simple field change (avoid wiping form)
   if (['beer','status','targetVol'].includes(field)) renderContent();
 }
@@ -2413,7 +2437,7 @@ function updateBrewField(field, val) {
   const i = state.brewLogs.findIndex(b=>b.id===id);
   if (i<0) return;
   state.brewLogs[i][field] = val;
-  saveState();
+  saveState(['brewLogs']);
 }
 
 // Deducts qty from a raw material's batches (FIFO by delivery date).
@@ -2471,9 +2495,9 @@ function deductFromBatches(rm, qtyNeeded, preferredBatchNo) {
 // Used for post-fermentation additions like Filter Sheets / Spindasol where
 // the entered quantity can be corrected later without double-deducting.
 function adjustRMByDelta(rmName, delta) {
-  if (!delta) return;
+  if (!delta) return false;
   const rm = state.rawMaterials.find(r=>r.name.toLowerCase()===rmName.toLowerCase());
-  if (!rm) { toast(`Raw material "${rmName}" not found — quantity recorded but stock not adjusted`, false); return; }
+  if (!rm) { toast(`Raw material "${rmName}" not found — quantity recorded but stock not adjusted`, false); return false; }
   if (delta > 0) {
     deductFromBatches(rm, delta);
   } else {
@@ -2488,6 +2512,7 @@ function adjustRMByDelta(rmName, delta) {
     }
   }
   rmStatus(rm);
+  return true;
 }
 
 // Records a filtration field (Filter Sheets / Spindasol qty) on the brew log
@@ -2499,12 +2524,13 @@ function updateFiltrationField(id, field, val, rmName, deductedField) {
   const log = state.brewLogs[i];
   const prevDeducted = log[deductedField] || 0;
   const delta = val - prevDeducted;
+  let rmTouched = false;
   if (delta !== 0) {
-    adjustRMByDelta(rmName, delta);
+    rmTouched = adjustRMByDelta(rmName, delta);
     log[deductedField] = val;
   }
   log[field] = val;
-  saveState();
+  saveState(rmTouched ? ['brewLogs','rawMaterials'] : ['brewLogs']);
 }
 
 // Records the actual volume that went into the fermenter (post-wastage),
@@ -2522,6 +2548,7 @@ function updateActualVolume(id, val) {
   const tankId = log.tank || log.execution?.fvTank || null;
   const tank = tankId ? state.tanks.find(t=>t.id===tankId) : null;
   let updatedSomewhere = false;
+  const dirtyKeys = ['brewLogs'];
   if (tank && tank.beer === log.beer && String(tank.batchNo||'').replace(/^0+/,'') === String(log.batchNo||'').replace(/^0+/,'')) {
     // Only correct the tank if it still holds THIS batch — if it's already
     // been cleared/reassigned, don't touch whatever's in there now.
@@ -2541,6 +2568,7 @@ function updateActualVolume(id, val) {
     state.tanks[ti].vol = Math.max(0, Math.round(((state.tanks[ti].vol||0) + delta)*1000)/1000);
     state.tanks[ti].batchVol = val;
     updatedSomewhere = true;
+    dirtyKeys.push('tanks');
   }
 
   // The batch may instead (or additionally, if a partial transfer left
@@ -2559,6 +2587,7 @@ function updateActualVolume(id, val) {
       const b = state.beerInventory[invIdx].batches[batchIdx];
       b.litres = Math.max(0, Math.round(((b.litres||0) + delta)*1000)/1000);
       updatedSomewhere = true;
+      dirtyKeys.push('beerInventory');
     }
   }
 
@@ -2566,7 +2595,7 @@ function updateActualVolume(id, val) {
     toast('Linked tank not found, and no matching cold room batch either — actual volume recorded on the recipe, but no stock location could be updated', false);
   }
 
-  saveState();
+  saveState(dirtyKeys);
 
   // Live link: push this value straight to bar order's "Litres Brewed"
   // (bb.litres/totalLitres) for the matching batch — Actual Volume here is
@@ -2579,7 +2608,7 @@ function updateActualVolume(id, val) {
 function startBrew(id) {
   const i = state.brewLogs.findIndex(b=>b.id===id);
   state.brewLogs[i].status = 'In Progress';
-  saveState(); renderNav(); renderContent();
+  saveState(['brewLogs']); renderNav(); renderContent();
   toast('Brew started!');
 }
 
@@ -2645,7 +2674,12 @@ function completeBrew(id) {
   state.brewLogs[li].status = 'Completed';
   state.brewLogs[li].inventoryDeducted = true;
   if (targetTank) state.brewLogs[li].tank = targetTank.id; // ensure reliably set even if it came from ex.fvTank
-  saveState(); renderNav(); renderContent();
+  // Ingredients were deducted from rawMaterials above (if any), and the
+  // target tank (if any) was just assigned — both need to go out alongside brewLogs.
+  const completeDirty = ['brewLogs'];
+  if (allIngs.length) completeDirty.push('rawMaterials');
+  if (targetTank) completeDirty.push('tanks');
+  saveState(completeDirty); renderNav(); renderContent();
   toast(`Brew completed. ${allIngs.length} item(s) deducted${targetTank?', assigned to '+targetTank.name:''}.`);
 }
 
@@ -2653,7 +2687,7 @@ function completeBrewNoDeduct(id) {
   if (!confirm('Mark this brew as Complete without deducting stock again?')) return;
   const i = state.brewLogs.findIndex(b=>b.id===id);
   state.brewLogs[i].status = 'Completed';
-  saveState(); renderNav(); renderContent();
+  saveState(['brewLogs']); renderNav(); renderContent();
   toast('Brew marked complete.');
 }
 
@@ -2661,7 +2695,7 @@ function deleteBrewLog(id) {
   if (!confirm('Delete this brew log?')) return;
   state.brewLogs = state.brewLogs.filter(b=>b.id!==id);
   window._openBrewId = null;
-  saveState(); renderNav(); renderContent();
+  saveState(['brewLogs']); renderNav(); renderContent();
   toast('Brew log deleted.');
 }
 
@@ -3173,9 +3207,11 @@ function confirmTransferToColdRoom() {
     b.status==='Completed' && b.beer===t.beer &&
     String(b.batchNo||'').replace(/^0+/,'')===String(t.batchNo||'').replace(/^0+/,'')
   ) : null;
+  const tcrDirty = ['tanks','beerInventory'];
   if (linkedLog) {
     const li = state.brewLogs.findIndex(b=>b.id===linkedLog.id);
     state.brewLogs[li].actualVol = correctedBatchVol;
+    tcrDirty.push('brewLogs');
   }
 
   // Add to cold room inventory
@@ -3197,11 +3233,13 @@ function confirmTransferToColdRoom() {
   }
 
   if (t.beer) {
-    logBrewEvent(t.beer, t.batchNo, 'transfer-coldroom', `Transferred ${vol}L to Cold Room from ${t.name}`);
+    if (logBrewEvent(t.beer, t.batchNo, 'transfer-coldroom', `Transferred ${vol}L to Cold Room from ${t.name}`)) {
+      if (!tcrDirty.includes('brewLogs')) tcrDirty.push('brewLogs');
+    }
   }
 
   // Save cold room addition first before clearing tank
-  saveState();
+  saveState(tcrDirty);
 
   // Directly push corrected batch size to bar order — tank is about to become
   // inactive/empty so it won't be picked up by the normal computeBreweryBeers push
@@ -3257,10 +3295,12 @@ function confirmTransferToTank() {
     b.status==='Completed' && b.beer===source.beer &&
     String(b.batchNo||'').replace(/^0+/,'')===String(source.batchNo||'').replace(/^0+/,'')
   ) : null;
+  const tttDirty = ['tanks','gravityLogs'];
   if (linkedLog) {
     const li = state.brewLogs.findIndex(b=>b.id===linkedLog.id);
     state.brewLogs[li].actualVol = correctedVol;
     state.brewLogs[li].tank = destId; // batch now lives in the destination tank
+    tttDirty.push('brewLogs');
   }
 
   // Carry the gravity/temp log over to the destination tank rather than
@@ -3302,7 +3342,9 @@ function confirmTransferToTank() {
   };
 
   if (source.beer) {
-    logBrewEvent(source.beer, source.batchNo, 'transfer-tank', `Transferred ${vol}L from ${source.name} to ${state.tanks[di].name} (${destStage})`);
+    if (logBrewEvent(source.beer, source.batchNo, 'transfer-tank', `Transferred ${vol}L from ${source.name} to ${state.tanks[di].name} (${destStage})`)) {
+      if (!tttDirty.includes('brewLogs')) tttDirty.push('brewLogs');
+    }
   }
 
   // If this batch was already visible in bar order (had been Ready before),
@@ -3324,7 +3366,7 @@ function confirmTransferToTank() {
     }, `relinking ${source.beer} batch ${strippedBatchNo} to new tank`);
   }
 
-  saveState();
+  saveState(tttDirty);
   if (source.beer) pushBatchSizeCorrection(source.beer, strippedBatchNo, correctedVol);
 
   closeTankDetail();
@@ -3360,10 +3402,11 @@ function changeTankStage(id, newStage) {
   }
   const oldStage = tank.stage;
   state.tanks[i].stage = newStage;
+  const ctsDirty = ['tanks'];
   if (newStage === 'Ready' && oldStage !== 'Ready' && tank.beer) {
-    logBrewEvent(tank.beer, tank.batchNo, 'ready', `Marked Ready in ${tank.name}`);
+    if (logBrewEvent(tank.beer, tank.batchNo, 'ready', `Marked Ready in ${tank.name}`)) ctsDirty.push('brewLogs');
   }
-  saveState();
+  saveState(ctsDirty);
   openTankDetail(id); // re-render modal in place
 }
 
@@ -3371,7 +3414,7 @@ function updateTankField(id, field, val) {
   const i = state.tanks.findIndex(x=>x.id===id);
   if (i<0) return;
   state.tanks[i][field] = val;
-  saveState();
+  saveState(['tanks']);
 }
 
 // The FG reading taken during Carbonating is entered as a °Plato value
@@ -3386,6 +3429,7 @@ function updateTankFGPlato(id, plato) {
   const t = state.tanks[i];
   t.fgPlato = plato;
 
+  const tfgDirty = ['tanks'];
   if (plato != null && plato !== '' && !isNaN(plato)) {
     const sg = 1 + (plato/(258.6-((plato/258.2)*227.1)));
     const linkedLog = t.beer ? state.brewLogs.find(log =>
@@ -3395,10 +3439,11 @@ function updateTankFGPlato(id, plato) {
     if (linkedLog) {
       const li = state.brewLogs.findIndex(l=>l.id===linkedLog.id);
       state.brewLogs[li].fgActual = sg.toFixed(3);
+      tfgDirty.push('brewLogs');
     }
   }
 
-  saveState();
+  saveState(tfgDirty);
   openTankDetail(id); // re-render modal in place to show the computed SG
 }
 
@@ -3414,7 +3459,7 @@ function addTempLog(tankId) {
   // Update tank current temp
   const i = state.tanks.findIndex(x=>x.id===tankId);
   if (i>=0 && temp!=null) state.tanks[i].temp = temp;
-  saveState();
+  saveState(i>=0 && temp!=null ? ['gravityLogs','tanks'] : ['gravityLogs']);
   openTankDetail(tankId);
 }
 
@@ -3434,14 +3479,14 @@ function addGravityLog(tankId) {
     state.tanks[i].gravity = plato;
     if (temp!=null) state.tanks[i].temp = temp;
   }
-  saveState();
+  saveState(i>=0 ? ['gravityLogs','tanks'] : ['gravityLogs']);
   openTankDetail(tankId); // refresh modal
 }
 
 function removeGravityLog(tankId, idx) {
   if (!confirm('Remove this gravity reading?')) return;
   state.gravityLogs[tankId].splice(idx, 1);
-  saveState();
+  saveState(['gravityLogs']);
   openTankDetail(tankId);
 }
 
@@ -3554,7 +3599,7 @@ function saveTank(){
     obj.id='T'+state.nextTankId++;
     state.tanks.push(obj);
   }
-  saveState();closeTankModal();renderContent();toast('Tank saved');
+  saveState(['tanks']);closeTankModal();renderContent();toast('Tank saved');
 }
 
 function showArchivePrompt(tankId, tank, newObj) {
@@ -3613,13 +3658,13 @@ function buildTankGravityHistory(tank) {
 // history of what happened to a batch after brew day, shown below its
 // Gravity Readings, alongside the readings themselves.
 function logBrewEvent(beer, batchNo, type, description) {
-  if (!beer) return;
+  if (!beer) return false;
   const stripped = String(batchNo||'').replace(/^0+/,'');
   const log = state.brewLogs.find(b =>
     b.status === 'Completed' && b.beer === beer &&
     String(b.batchNo||'').replace(/^0+/,'') === stripped
   );
-  if (!log) return;
+  if (!log) return false;
   const li = state.brewLogs.findIndex(b => b.id === log.id);
   if (!state.brewLogs[li].events) state.brewLogs[li].events = [];
   state.brewLogs[li].events.push({
@@ -3627,6 +3672,7 @@ function logBrewEvent(beer, batchNo, type, description) {
     type,
     description,
   });
+  return true;
 }
 
 function clearTankNoArchive(tankId) {
@@ -3635,7 +3681,7 @@ function clearTankNoArchive(tankId) {
   if(!newObj) return;
   const i = state.tanks.findIndex(x=>x.id===tankId);
   if(i>=0) state.tanks[i]={...state.tanks[i],...newObj};
-  saveState(); renderContent(); toast('Tank cleared');
+  saveState(['tanks']); renderContent(); toast('Tank cleared');
   window._pendingTankClear = null;
 }
 
@@ -3705,7 +3751,7 @@ function archiveAndClearTank(tankId) {
   const i = state.tanks.findIndex(x=>x.id===tankId);
   if(i>=0) state.tanks[i]={...state.tanks[i],...newObj};
 
-  saveState(); renderContent();
+  saveState(['tanks','gravityLogs','brewLogs']); renderContent();
   toast('Batch archived to Brew Log & tank cleared');
   window._pendingTankClear = null;
 }
@@ -3713,7 +3759,7 @@ function deleteTank(){
   const id=document.getElementById('tm-id').value;
   if(!confirm('Delete this tank?'))return;
   state.tanks=state.tanks.filter(x=>x.id!==id);
-  saveState();closeTankModal();renderContent();toast('Deleted');
+  saveState(['tanks']);closeTankModal();renderContent();toast('Deleted');
 }
 
 // ── Raw Materials ─────────────────────────────────────────────────────────────
@@ -4299,6 +4345,7 @@ function saveRM(){
   };
   if(!obj.name){toast('Name required',false);return;}
   let cascadeMsg = '';
+  let rmSaveDirty = ['rawMaterials'];
   if(id){
     const i=state.rawMaterials.findIndex(x=>x.id===id);
     const existing = state.rawMaterials[i];
@@ -4335,7 +4382,7 @@ function saveRM(){
           }
         });
       });
-      if (touched) cascadeMsg = ` — updated ${touched} recipe ingredient reference${touched!==1?'s':''} to match`;
+      if (touched) { cascadeMsg = ` — updated ${touched} recipe ingredient reference${touched!==1?'s':''} to match`; rmSaveDirty.push('brewLogs'); }
     }
   } else {
     obj.id=state.nextRMId++;
@@ -4344,7 +4391,7 @@ function saveRM(){
     obj.lastCost=0;
     state.rawMaterials.push(obj);
   }
-  saveState();closeRMModal();renderContent();toast('Saved'+cascadeMsg);
+  saveState(rmSaveDirty);closeRMModal();renderContent();toast('Saved'+cascadeMsg);
 }
 function deleteRM(){
   const id=+document.getElementById('rmm-id').value;
@@ -4367,7 +4414,7 @@ function deleteRM(){
   }
   if(!confirm(msg))return;
   state.rawMaterials=state.rawMaterials.filter(x=>x.id!==id);
-  saveState();closeRMModal();renderContent();toast('Deleted');
+  saveState(['rawMaterials']);closeRMModal();renderContent();toast('Deleted');
 }
 
 // ── Batch helpers ─────────────────────────────────────────────────────────
@@ -4464,7 +4511,7 @@ function saveBatch(){
   }
   // Update stock total
   rmStatus(r);
-  saveState();closeBatchModal();renderContent();toast('Batch saved');
+  saveState(['rawMaterials']);closeBatchModal();renderContent();toast('Batch saved');
 }
 function deleteBatch(rmId,bi){
   const i=state.rawMaterials.findIndex(x=>x.id===rmId);if(i<0)return;
@@ -4489,7 +4536,7 @@ function deleteBatch(rmId,bi){
   if (freshBi<0) { toast('That batch no longer exists.', false); renderContent(); return; }
   r.batches.splice(freshBi,1);
   rmStatus(r);
-  saveState();renderContent();toast('Batch deleted');
+  saveState(['rawMaterials']);renderContent();toast('Batch deleted');
 }
 
 // ── Malt batch transfer ────────────────────────────────────────────────────
@@ -4518,7 +4565,7 @@ function applyBatchTransfer(){
   b.warehouseQty=Math.round(((b.warehouseQty||0)-qty)*1000)/1000;
   b.breweryQty=Math.round(((b.breweryQty||0)+qty)*1000)/1000;
   document.getElementById('batch-transfer-modal').style.display='none';
-  saveState();renderContent();toast(`${qty} kg transferred to brewery`);
+  saveState(['rawMaterials']);renderContent();toast(`${qty} kg transferred to brewery`);
 }
 
 // ── Adjust (legacy / quick adjust on whole item) ──────────────────────────
@@ -4556,7 +4603,7 @@ function applyAdj(){
     lastBatch.qty=adj(lastBatch.qty||0,type,qty);
   }
   rmStatus(r);
-  saveState();closeAdjModal();renderContent();toast('Stock updated');
+  saveState(['rawMaterials']);closeAdjModal();renderContent();toast('Stock updated');
 }
 
 
@@ -4932,7 +4979,7 @@ function savePO(){
     });
   }
 
-  saveState();closePOModal();renderContent();
+  saveState(['purchaseOrders','rawMaterials']);closePOModal();renderContent();
   toast(`✓ Invoice saved & stock updated for ${validItems.length} item(s)`);
 }
 
@@ -4940,14 +4987,14 @@ function deletePO(){
   const id=+document.getElementById('po-id').value;
   if(!confirm('Delete this invoice?'))return;
   state.purchaseOrders=state.purchaseOrders.filter(x=>x.id!==id);
-  saveState();closePOModal();renderContent();toast('Deleted');
+  saveState(['purchaseOrders']);closePOModal();renderContent();toast('Deleted');
 }
 
 function togglePOPaid(id){
   const po=state.purchaseOrders.find(x=>x.id===id);
   if(!po)return;
   po.paid=!po.paid;
-  saveState();renderContent();
+  saveState(['purchaseOrders']);renderContent();
   toast(po.paid?'Marked as paid':'Marked as unpaid');
 }
 
@@ -5061,14 +5108,14 @@ function startStockTake() {
   }));
   const st = { id: state.nextSTId++, date: today, status:'In Progress', doneBy:'', lines };
   state.stockTakes.push(st);
-  saveState();
+  saveState(['stockTakes']);
   renderContent();
   toast('Stock take started');
 }
 
 function updateStockTakeField(id, field, val) {
   const st = state.stockTakes.find(s=>s.id===id);
-  if(st) { st[field]=val; saveState(); }
+  if(st) { st[field]=val; saveState(['stockTakes']); }
 }
 
 function updateSTLine(stId, rmId, val) {
@@ -5078,7 +5125,7 @@ function updateSTLine(stId, rmId, val) {
   if (idx<0) return;
   st.lines[idx].actual = val;
   st.lines[idx].variance = val - st.lines[idx].expected;
-  saveState();
+  saveState(['stockTakes']);
   // re-render just the variance cell without full re-render for smoothness
   renderContent();
 }
@@ -5093,6 +5140,7 @@ function completeStockTake(id) {
   // Apply variance (actual - expected) to the batches array so it actually
   // affects displayed stock. .stock is a derived field recomputed from
   // batches on every render — writing to it directly has no lasting effect.
+  let stRMTouched = false;
   st.lines.forEach(line=>{
     if(line.actual==null) return;
     const r = state.rawMaterials.find(x=>x.id===line.rmId);
@@ -5100,6 +5148,7 @@ function completeStockTake(id) {
     const { total: currentTotal } = rmStatus(r);
     const variance = Math.round((line.actual - currentTotal)*1000)/1000;
     if (variance === 0) return;
+    stRMTouched = true;
 
     if (!r.batches || !r.batches.length) {
       // No batches to adjust — create one to hold the counted stock
@@ -5120,7 +5169,7 @@ function completeStockTake(id) {
   });
 
   st.status = 'Completed';
-  saveState();
+  saveState(stRMTouched ? ['stockTakes','rawMaterials'] : ['stockTakes']);
   renderContent();
   const variances = st.lines.filter(l=>l.variance!==0&&l.actual!=null).length;
   toast(`Stock take complete. ${variances} variance${variances!==1?'s':''} recorded.`);
@@ -5129,7 +5178,7 @@ function completeStockTake(id) {
 function cancelStockTake(id) {
   if(!confirm('Cancel this stock take? No changes will be saved.')) return;
   state.stockTakes = state.stockTakes.filter(s=>s.id!==id);
-  saveState();
+  saveState(['stockTakes']);
   renderContent();
   toast('Stock take cancelled');
 }
@@ -5439,7 +5488,7 @@ function saveBeerInvBatch() {
     if (!state.beerInventory[invIdx].batches) state.beerInventory[invIdx].batches = [];
     state.beerInventory[invIdx].batches.push({ batchNo, litres });
   }
-  saveState(); closeBeerInvModal(); renderContent(); toast('Saved');
+  saveState(['beerInventory']); closeBeerInvModal(); renderContent(); toast('Saved');
 }
 
 function deleteBeerInvBatch(ii, bi) {
@@ -5452,7 +5501,7 @@ function deleteBeerInvBatch(ii, bi) {
   if (invIdx<0 || batchIdx<0) { toast('That batch no longer exists.', false); renderContent(); return; }
   state.beerInventory[invIdx].batches.splice(batchIdx, 1);
   if (!state.beerInventory[invIdx].batches.length) state.beerInventory.splice(invIdx, 1);
-  saveState(); renderContent(); toast('Removed');
+  saveState(['beerInventory']); renderContent(); toast('Removed');
 }
 
 function openRecordWastage(ii, bi) {
@@ -5490,6 +5539,7 @@ function confirmRecordWastage() {
   // This is a permanent reduction in the batch's total volume — not a
   // dispatch — so it also reduces the linked brew log's Actual Volume,
   // which then pushes the corrected "Litres Brewed" to bar order.
+  const wastageDirty = ['beerInventory'];
   const linkedLog = state.brewLogs.find(log =>
     log.status==='Completed' && log.beer===beer &&
     String(log.batchNo||'').replace(/^0+/,'')===String(batchNo||'').replace(/^0+/,'')
@@ -5498,6 +5548,7 @@ function confirmRecordWastage() {
     const li = state.brewLogs.findIndex(l=>l.id===linkedLog.id);
     const newActualVol = Math.max(0, Math.round(((state.brewLogs[li].actualVol!=null?state.brewLogs[li].actualVol:0) - applied)*1000)/1000);
     state.brewLogs[li].actualVol = newActualVol;
+    wastageDirty.push('brewLogs');
 
     // Keep the linked tank's batch size consistent too, if it's still tracking this batch
     const tankId = linkedLog.tank || linkedLog.execution?.fvTank || null;
@@ -5505,6 +5556,7 @@ function confirmRecordWastage() {
     if (tank && tank.beer===beer && String(tank.batchNo||'').replace(/^0+/,'')===String(batchNo||'').replace(/^0+/,'')) {
       const ti = state.tanks.findIndex(t=>t.id===tankId);
       state.tanks[ti].batchVol = newActualVol;
+      wastageDirty.push('tanks');
     }
 
     // Push corrected total straight to bar order's Litres Brewed
@@ -5516,7 +5568,7 @@ function confirmRecordWastage() {
   }
 
   document.getElementById('wastage-modal').style.display = 'none';
-  saveState(); renderContent();
+  saveState(wastageDirty); renderContent();
   toast(`${applied}L wastage recorded for ${beerName(beer)} batch ${batchNo}`);
 }
 
@@ -5601,13 +5653,13 @@ function saveSched(){
   if(!obj.date){toast('Date required',false);return;}
   if(id){const i=state.schedule.findIndex(x=>x.id===id);state.schedule[i]={...state.schedule[i],...obj};}
   else{obj.id=state.nextSchedId++;state.schedule.push(obj);}
-  saveState();closeSchedModal();renderContent();toast('Saved');
+  saveState(['schedule']);closeSchedModal();renderContent();toast('Saved');
 }
 function deleteSched(){
   const id=+document.getElementById('sm-id').value;
   if(!confirm('Delete this brew?'))return;
   state.schedule=state.schedule.filter(x=>x.id!==id);
-  saveState();closeSchedModal();renderContent();toast('Deleted');
+  saveState(['schedule']);closeSchedModal();renderContent();toast('Deleted');
 }
 
 // ── Password ──────────────────────────────────────────────────────────────────
@@ -5956,7 +6008,7 @@ function saveBeer() {
     state.beers.push(obj);
     // No need to pre-create an empty cold room entry — batches are added on demand via + Add Batch
   }
-  saveState();closeBeerModal();renderContent();
+  saveState(['beers']);closeBeerModal();renderContent();
   toast(origCode?'Beer updated':'New beer added');
 }
 
