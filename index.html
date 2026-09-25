@@ -2427,6 +2427,18 @@ function updateLog(id, field, val) {
     }
   }
 
+  // Same one-time-snapshot problem as Target Volume above: once a brew is
+  // Completed and transferred to a tank, the tank's `beer` field was only
+  // ever copied from the brew log at that moment — editing the brew log's
+  // beer afterward doesn't retroactively update the tank. Keep them in sync.
+  if (field === 'beer' && log.status === 'Completed' && log.tank) {
+    const ti = state.tanks.findIndex(t=>t.id===log.tank);
+    if (ti >= 0 && state.tanks[ti].beer === oldVal) {
+      state.tanks[ti].beer = val;
+      tankTouched = true;
+    }
+  }
+
   saveState(tankTouched ? ['brewLogs','tanks'] : ['brewLogs']);
   // Only re-render if not a simple field change (avoid wiping form)
   if (['beer','status','targetVol'].includes(field)) renderContent();
