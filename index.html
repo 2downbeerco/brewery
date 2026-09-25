@@ -2386,10 +2386,32 @@ async function renameBrewBatchInKegs(beer, oldBatch, newBatch) {
 function updateLog(id, field, val) {
   const i = state.brewLogs.findIndex(b=>b.id===id);
   if (i<0) return;
-  state.brewLogs[i][field] = val;
+  const log = state.brewLogs[i];
+  const oldVal = log[field];
+  log[field] = val;
+
+  // If Target Volume is edited AFTER the brew has already been marked
+  // Complete and transferred to a tank, that tank's vol/batchVol were only
+  // ever a one-time snapshot of the old Target Volume — they don't track
+  // this field automatically. Push the correction through as a delta
+  // (not an overwrite) so any real, legitimate volume changes since
+  // transfer (kegging, wastage, racking losses) are preserved.
+  if (field === 'targetVol' && log.status === 'Completed' && log.tank) {
+    const ti = state.tanks.findIndex(t=>t.id===log.tank);
+    if (ti >= 0) {
+      const delta = (+val || 0) - (+oldVal || 0);
+      if (delta !== 0) {
+        state.tanks[ti].vol = Math.max(0, (+state.tanks[ti].vol || 0) + delta);
+        if (state.tanks[ti].batchVol != null) {
+          state.tanks[ti].batchVol = Math.max(0, (+state.tanks[ti].batchVol || 0) + delta);
+        }
+      }
+    }
+  }
+
   saveState();
   // Only re-render if not a simple field change (avoid wiping form)
-  if (['beer','status'].includes(field)) renderContent();
+  if (['beer','status','targetVol'].includes(field)) renderContent();
 }
 
 function updateBrewField(field, val) {
@@ -3478,9 +3500,11 @@ function editTank(id){
   // to the tank, cold room, and bar order automatically) — not editable here.
   document.getElementById('tm-batchno').disabled = true;
   // Current Vol changes automatically through Record Wastage, keg
-  // assignments, Transfer to Cold Room, and Transfer to Another Tank —
-  // never hand-edited here.
+  // assignments, Transfer to Cold Room, and Transfer to Another Tank (and
+  // now also through editing Target Volume on the linked, already-
+  // Completed brew log — see updateLog()) — never hand-edited here.
   document.getElementById('tm-vol').disabled = true;
+  document.getElementById('tm-vol').placeholder = 'auto-updates';
   // Batch Size is sourced from the linked brew log's Actual Volume (entered
   // under Completed) — falls back to whatever's already stored on the tank
   // if no matching brew log/actual volume exists yet.
