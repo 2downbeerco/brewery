@@ -2658,11 +2658,23 @@ function completeBrew(id) {
   // Deduct from actual batches (FIFO), not the derived .stock field —
   // .stock gets recomputed from batches on every render, so writing to it
   // directly has no lasting effect.
+  // Note what actually got deducted vs what was needed — deductFromBatches
+  // can come up short (e.g. a malt's breweryQty was 0 because it was never
+  // logged as moved to the brewery floor, even though warehouseQty had
+  // stock) and previously did so with zero indication: inventoryDeducted
+  // still got set true, so the brew looked fully accounted for when it
+  // wasn't.
+  const shortfalls = [];
   allIngs.forEach(ing=>{
     const rm = state.rawMaterials.find(r=>r.id==ing.rmId);
     if (rm) {
-      deductFromBatches(rm, ing.qty, ing.batchNo);
+      const deducted = deductFromBatches(rm, ing.qty, ing.batchNo);
       rmStatus(rm);
+      if (deducted < ing.qty - 0.001) {
+        shortfalls.push(`${rm.name}: needed ${ing.qty}${ing.unit||''}, only ${deducted}${ing.unit||''} deducted`);
+      }
+    } else {
+      shortfalls.push(`${ing.name||'ingredient'}: raw material record not found — nothing deducted`);
     }
   });
 
@@ -2692,7 +2704,11 @@ function completeBrew(id) {
   if (allIngs.length) completeDirty.push('rawMaterials');
   if (targetTank) completeDirty.push('tanks');
   saveState(completeDirty); renderNav(); renderContent();
-  toast(`Brew completed. ${allIngs.length} item(s) deducted${targetTank?', assigned to '+targetTank.name:''}.`);
+  if (shortfalls.length) {
+    toast(`Brew completed, but stock could not be fully deducted for: ${shortfalls.join('; ')}. Check these raw materials.`, false);
+  } else {
+    toast(`Brew completed. ${allIngs.length} item(s) deducted${targetTank?', assigned to '+targetTank.name:''}.`);
+  }
 }
 
 function completeBrewNoDeduct(id) {
