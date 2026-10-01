@@ -4059,6 +4059,7 @@ function renderRMInventory() {
         <input type="hidden" id="bm-rm-id">
         <input type="hidden" id="bm-batch-idx">
         <input type="hidden" id="bm-orig-batchno">
+        <input type="hidden" id="bm-bid">
         <div id="bm-rm-info" style="font-size:14px;color:var(--muted);margin-bottom:16px;"></div>
         <div class="form-row form-row-2">
           <div class="form-group"><label class="lbl">Batch No.</label><input class="inp" id="bm-batchno" placeholder="e.g. B2025-06"></div>
@@ -4101,6 +4102,7 @@ function renderRMInventory() {
         <input type="hidden" id="bt-rm-id">
         <input type="hidden" id="bt-batch-idx">
         <input type="hidden" id="bt-orig-batchno">
+        <input type="hidden" id="bt-bid">
         <div id="bt-info" style="font-size:14px;color:var(--muted);margin-bottom:16px;"></div>
         <div class="form-group"><label class="lbl">Quantity to transfer (kg)</label>
           <input class="inp" id="bt-qty" type="number" step="0.1" placeholder="0">
@@ -4517,6 +4519,7 @@ function openAddBatch(rmId){
   document.getElementById('bm-rm-id').value=rmId;
   document.getElementById('bm-batch-idx').value='';
   document.getElementById('bm-orig-batchno').value='';
+  document.getElementById('bm-bid').value='';
   document.getElementById('bm-rm-info').textContent='';
   document.getElementById('bm-batchno').value='';
   document.getElementById('bm-delivery').value=new Date().toISOString().slice(0,10);
@@ -4542,6 +4545,13 @@ function openEditBatch(rmId, bi){
   document.getElementById('bm-rm-id').value=rmId;
   document.getElementById('bm-batch-idx').value=bi; // kept for backward compat, unused for commit
   document.getElementById('bm-orig-batchno').value=b.batchNo||'';
+  // _bid is a stable per-batch id, independent of batch no. — needed because
+  // the same supplier batch no. can legitimately appear on more than one
+  // delivery (two separate shipments of the same lot), so batch no. alone
+  // can't reliably identify WHICH batch row to commit the edit to. Falls
+  // back to batch-no. matching in saveBatch() for any batch that predates
+  // this field.
+  document.getElementById('bm-bid').value=b._bid||'';
   document.getElementById('bm-rm-info').textContent='';
   document.getElementById('bm-batchno').value=b.batchNo||'';
   document.getElementById('bm-delivery').value=b.deliveryDate||'';
@@ -4568,6 +4578,7 @@ function closeBatchModal(){document.getElementById('batch-modal').style.display=
 function saveBatch(){
   const rmId=+document.getElementById('bm-rm-id').value;
   const origBatchNo=document.getElementById('bm-orig-batchno')?.value || '';
+  const bid=document.getElementById('bm-bid')?.value || '';
   const isEdit = origBatchNo !== '';
   const i=state.rawMaterials.findIndex(x=>x.id===rmId);if(i<0)return;
   const r=state.rawMaterials[i];
@@ -4593,13 +4604,20 @@ function saveBatch(){
     })
   };
   if(isEdit){
-    // Resolve the target batch fresh by its original batch no. — protects
-    // against a background sync reordering/changing r.batches since the
-    // modal was opened (e.g. another device added a PO batch meanwhile)
-    const bi = r.batches.findIndex(b=>b.batchNo===origBatchNo);
+    // Resolve the target batch fresh — protects against a background sync
+    // reordering/changing r.batches since the modal was opened (e.g.
+    // another device added a PO batch meanwhile). Prefer the stable _bid:
+    // the same supplier batch no. can legitimately show up on more than
+    // one delivery (two shipments of the same lot), so matching by batch
+    // no. alone can silently resolve to the WRONG row when a duplicate
+    // exists — edits would then appear to do nothing to the batch the
+    // person actually opened. Batch-no. matching is kept only as a
+    // fallback for batches saved before _bid existed.
+    const bi = bid ? r.batches.findIndex(b=>b._bid===bid) : r.batches.findIndex(b=>b.batchNo===origBatchNo);
     if (bi<0) { toast('That batch no longer exists — it may have changed elsewhere. Please refresh and try again.', false); closeBatchModal(); renderContent(); return; }
     r.batches[bi]={...r.batches[bi],...bObj};
   } else {
+    bObj._bid = 'b'+Date.now().toString(36)+Math.random().toString(36).slice(2,8);
     r.batches.push(bObj);
   }
   // Update stock total
@@ -4625,7 +4643,13 @@ function deleteBatch(rmId,bi){
   }
   if(!confirm(msg))return;
 
-  const freshBi = r.batches.findIndex(b=>b.batchNo===batchAtClick.batchNo);
+  // Prefer the stable _bid over batch no. for the same reason as
+  // saveBatch() — two deliveries of the same supplier lot legitimately
+  // share a batch no., so re-matching by batch no. alone risks deleting
+  // the wrong one of the two.
+  const freshBi = batchAtClick._bid
+    ? r.batches.findIndex(b=>b._bid===batchAtClick._bid)
+    : r.batches.findIndex(b=>b.batchNo===batchAtClick.batchNo);
   if (freshBi<0) { toast('That batch no longer exists.', false); renderContent(); return; }
   r.batches.splice(freshBi,1);
   rmStatus(r);
@@ -4639,6 +4663,7 @@ function openBatchTransfer(rmId,bi){
   document.getElementById('bt-rm-id').value=rmId;
   document.getElementById('bt-batch-idx').value=bi; // kept for backward compat, unused for commit
   document.getElementById('bt-orig-batchno').value=b.batchNo||'';
+  document.getElementById('bt-bid').value=b._bid||'';
   document.getElementById('bt-info').innerHTML=`<strong>${r.name}</strong> — Batch ${b.batchNo}<br>
     Warehouse: <strong>${b.warehouseQty||0} kg</strong> · Brewery: <strong>${b.breweryQty||0} kg</strong>`;
   document.getElementById('bt-qty').value='';
@@ -4647,10 +4672,13 @@ function openBatchTransfer(rmId,bi){
 function applyBatchTransfer(){
   const rmId=+document.getElementById('bt-rm-id').value;
   const origBatchNo=document.getElementById('bt-orig-batchno').value;
+  const bid=document.getElementById('bt-bid')?.value || '';
   const qty=+document.getElementById('bt-qty').value;
   const i=state.rawMaterials.findIndex(x=>x.id===rmId);if(i<0)return;
   const r = state.rawMaterials[i];
-  const bi = r.batches.findIndex(b=>b.batchNo===origBatchNo);
+  // Same duplicate-batch-no. concern as saveBatch()/deleteBatch() — prefer
+  // the stable _bid when we have one.
+  const bi = bid ? r.batches.findIndex(b=>b._bid===bid) : r.batches.findIndex(b=>b.batchNo===origBatchNo);
   if (bi<0) { toast('That batch no longer exists — it may have changed elsewhere. Please refresh and try again.', false); document.getElementById('batch-transfer-modal').style.display='none'; renderContent(); return; }
   const b=r.batches[bi];
   if(!qty||qty<=0){toast('Enter a valid quantity',false);return;}
