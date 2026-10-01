@@ -2185,14 +2185,61 @@ function removeIng(section, idx) {
   const id = window._openBrewId;
   const i = state.brewLogs.findIndex(b=>b.id===id);
   if (i<0) return;
+  const log = state.brewLogs[i];
+  const ing = log[section][idx];
+  const dirtyKeys = ['brewLogs'];
+  // If this brew is already Completed (stock deducted once at completion),
+  // removing a line should add its qty back — otherwise that stock stays
+  // deducted forever with no ingredient line left to account for it.
+  if (log.status === 'Completed' && log.inventoryDeducted && ing?.rmId && ing.qty>0) {
+    const rm = state.rawMaterials.find(r=>r.id==ing.rmId);
+    if (rm) { adjustRMStock(rm, -ing.qty, ing.batchNo); dirtyKeys.push('rawMaterials'); }
+  }
   state.brewLogs[i][section].splice(idx, 1);
-  saveState(['brewLogs']); renderContent();
+  saveState(dirtyKeys); renderContent();
 }
 
 function updateIng(section, idx, field, val) {
   const id = window._openBrewId;
   const i = state.brewLogs.findIndex(b=>b.id===id);
   if (i<0) return;
+  const log = state.brewLogs[i];
+  const ing = log[section][idx];
+  const dirtyKeys = ['brewLogs'];
+
+  // For a brew that's already Completed (stock already deducted once at
+  // completion time), editing an ingredient line here previously only
+  // changed the recipe record — the raw material stock was never touched,
+  // so e.g. re-pitching yeast and bumping its qty up never drew down
+  // warehouse/brewery stock, and the brew log silently drifted out of sync
+  // with actual usage. Mirrors updateFiltrationField's delta approach:
+  // adjust stock by the DIFFERENCE, never the full new value, so repeated
+  // edits (fixing a typo, say) don't double-deduct.
+  const deductedAlready = log.status === 'Completed' && log.inventoryDeducted;
+  if (deductedAlready && field === 'qty') {
+    const oldQty = ing.qty || 0;
+    const delta = (val||0) - oldQty;
+    if (delta !== 0 && ing.rmId) {
+      const rm = state.rawMaterials.find(r=>r.id==ing.rmId);
+      if (rm) { adjustRMStock(rm, delta, ing.batchNo); dirtyKeys.push('rawMaterials'); }
+      else toast(`Raw material not found — quantity updated but stock not adjusted`, false);
+    }
+  }
+  if (deductedAlready && field === 'rmId') {
+    // Switching which raw material this line draws from: reverse the old
+    // material's deduction (at the qty currently on the line) and apply
+    // the same qty against the newly-selected material.
+    const qty = ing.qty || 0;
+    if (qty > 0) {
+      if (ing.rmId) {
+        const oldRm = state.rawMaterials.find(r=>r.id==ing.rmId);
+        if (oldRm) { adjustRMStock(oldRm, -qty, ing.batchNo); dirtyKeys.push('rawMaterials'); }
+      }
+      const newRm = state.rawMaterials.find(r=>r.id==val);
+      if (newRm) { adjustRMStock(newRm, qty, null); dirtyKeys.push('rawMaterials'); }
+    }
+  }
+
   state.brewLogs[i][section][idx][field] = field==='rmId' ? +val : val;
   if (field==='rmId') {
     const rm = state.rawMaterials.find(r=>r.id==val);
@@ -2218,7 +2265,10 @@ function updateIng(section, idx, field, val) {
       }
     }
   }
-  saveState(['brewLogs']); renderContent();
+  saveState(dirtyKeys); renderContent();
+  if (deductedAlready && dirtyKeys.includes('rawMaterials')) {
+    toast(`Stock adjusted to match the updated ingredient quantity.`);
+  }
 }
 
 function updateIngUnit(section, idx, selectEl) {
@@ -2506,25 +2556,40 @@ function deductFromBatches(rm, qtyNeeded, preferredBatchNo) {
 // to the most recent batch (matching the Stock Take / Adjust convention).
 // Used for post-fermentation additions like Filter Sheets / Spindasol where
 // the entered quantity can be corrected later without double-deducting.
-function adjustRMByDelta(rmName, delta) {
+function adjustRMByDelta(rmName, delta, preferredBatchNo) {
   if (!delta) return false;
   const rm = state.rawMaterials.find(r=>r.name.toLowerCase()===rmName.toLowerCase());
   if (!rm) { toast(`Raw material "${rmName}" not found — quantity recorded but stock not adjusted`, false); return false; }
+  adjustRMStock(rm, delta, preferredBatchNo);
+  return true;
+}
+
+// Shared by adjustRMByDelta (keyed by name) and ingredient-line edits on an
+// already-Completed brew (keyed by rm object directly, since we already
+// have it). Positive delta deducts more (FIFO, preferring preferredBatchNo
+// if given — e.g. the batch originally selected on the ingredient line);
+// negative delta adds back, into preferredBatchNo if it still exists,
+// otherwise the most recent batch (matching the Stock Take / Adjust
+// convention).
+function adjustRMStock(rm, delta, preferredBatchNo) {
+  if (!delta) return;
   if (delta > 0) {
-    deductFromBatches(rm, delta);
+    deductFromBatches(rm, delta, preferredBatchNo);
   } else {
     const addBack = -delta;
     if (!rm.batches || !rm.batches.length) {
       rm.batches = [{ batchNo: 'ADJ-'+Date.now(), deliveryDate: new Date().toISOString().slice(0,10), cost: rm.lastCost||0, qty: addBack }];
     } else {
-      const sorted = [...rm.batches].sort((a,b)=>(b.deliveryDate||'').localeCompare(a.deliveryDate||''));
-      const target = sorted[0];
+      let target = preferredBatchNo ? rm.batches.find(b=>b.batchNo===preferredBatchNo) : null;
+      if (!target) {
+        const sorted = [...rm.batches].sort((a,b)=>(b.deliveryDate||'').localeCompare(a.deliveryDate||''));
+        target = sorted[0];
+      }
       if (rm.category==='Malt') target.breweryQty = Math.round(((target.breweryQty||0)+addBack)*1000)/1000;
       else target.qty = Math.round(((target.qty||0)+addBack)*1000)/1000;
     }
   }
   rmStatus(rm);
-  return true;
 }
 
 // Records a filtration field (Filter Sheets / Spindasol qty) on the brew log
