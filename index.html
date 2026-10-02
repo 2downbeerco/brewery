@@ -5021,6 +5021,23 @@ function savePO(){
   }
 
   // Update stock: new POs add full qty, edits apply the delta (new qty - old qty)
+  // Old/new items are paired up front (preferring a matching explicit batch
+  // number, falling back to name, each old item consumed at most once) so
+  // that splitting one ingredient into multiple lines on an edit — e.g. two
+  // batches of the same malt delivered together — can't make two new items
+  // collide onto the same old item via a plain name match.
+  const oldItemsPool = oldItems.map(oi=>({...oi, _matched:false}));
+  const matchOldItem = (item, name) => {
+    let oldItem = null;
+    if (item.batchNo) {
+      oldItem = oldItemsPool.find(oi=>!oi._matched && oi.batchNo===item.batchNo);
+    }
+    if (!oldItem) {
+      oldItem = oldItemsPool.find(oi=>!oi._matched && oi.name.trim().toLowerCase()===name.toLowerCase());
+    }
+    if (oldItem) oldItem._matched = true;
+    return oldItem;
+  };
 
   validItems.forEach(item=>{
     const name=item.name.trim();
@@ -5040,7 +5057,7 @@ function savePO(){
     const batchNo=item.batchNo||('PO-'+po.id);
 
     // Calculate qty delta — full qty for new PO, difference for edits
-    const oldItem = oldItems.find(oi=>oi.name.trim().toLowerCase()===name.toLowerCase());
+    const oldItem = !isNew ? matchOldItem(item, name) : null;
     const qtyDelta = isNew ? item.qty : item.qty - (oldItem?.qty||0);
 
     // If this is an edit and the batch number itself changed, the RM batch
@@ -5087,11 +5104,11 @@ function savePO(){
   });
 
   // Handle items that existed in the old PO but were removed entirely during edit
+  // (anything in oldItemsPool that never got paired with a new line above)
   if (!isNew) {
-    oldItems.forEach(oldItem => {
+    oldItemsPool.forEach(oldItem => {
       const name = oldItem.name.trim();
-      const stillPresent = validItems.some(vi=>vi.name.trim().toLowerCase()===name.toLowerCase());
-      if (stillPresent || !oldItem.qty) return;
+      if (oldItem._matched || !oldItem.qty) return;
       const r = state.rawMaterials.find(x=>x.name.toLowerCase()===name.toLowerCase());
       if (!r || !r.batches) return;
       const batchNo = oldItem.batchNo || ('PO-'+id);
