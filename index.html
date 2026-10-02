@@ -5011,6 +5011,7 @@ function savePO(){
   };
 
   if(id){
+    po.id=id;
     const i=state.purchaseOrders.findIndex(x=>x.id===id);
     state.purchaseOrders[i]={...state.purchaseOrders[i],...po};
   } else {
@@ -5071,12 +5072,15 @@ function savePO(){
       if(isMalt&&item.extractLdk!=null) r.batches[existingBi].extractLdk=item.extractLdk;
       if(isHops&&item.alphaAcid!=null) r.batches[existingBi].alphaAcid=item.alphaAcid;
     } else if(qtyDelta>0){
-      // New batch
+      // New batch (or, on an edit, a batch that went missing under its expected
+      // name — e.g. renamed elsewhere — in which case only the delta, not the
+      // full new qty, should be added so we don't double-count what the old
+      // batch already held)
       r.batches.push({
         batchNo, deliveryDate:po.deliveryDate||null, cost:item.unitCost||0, gstPct:item.gst||0,
-        ...(isMalt?{warehouseQty:item.qty||0,breweryQty:0,extractLdk:item.extractLdk!=null?item.extractLdk:null}
-          :isHops?{qty:item.qty||0,alphaAcid:item.alphaAcid!=null?item.alphaAcid:null}
-          :{qty:item.qty||0})
+        ...(isMalt?{warehouseQty:qtyDelta,breweryQty:0,extractLdk:item.extractLdk!=null?item.extractLdk:null}
+          :isHops?{qty:qtyDelta,alphaAcid:item.alphaAcid!=null?item.alphaAcid:null}
+          :{qty:qtyDelta})
       });
     }
     rmStatus(r);
