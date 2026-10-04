@@ -2519,16 +2519,24 @@ function deductFromBatches(rm, qtyNeeded, preferredBatchNo) {
   let deducted = 0;
 
   if (preferredBatchNo) {
-    const preferred = rm.batches.find(b=>b.batchNo===preferredBatchNo);
-    if (preferred) {
+    // More than one physical batch can legitimately share the same batch
+    // number (e.g. the same supplier lot delivered across two separate
+    // invoices) — drain every batch under this name, oldest delivery
+    // first, before falling back to other batches. Matching only the
+    // first one (and then excluding the name entirely from the fallback
+    // below) made a second same-named batch's stock unreachable.
+    const preferredBatches = rm.batches
+      .filter(b=>b.batchNo===preferredBatchNo)
+      .sort((a,b)=>(a.deliveryDate||'').localeCompare(b.deliveryDate||''));
+    for (const preferred of preferredBatches) {
+      if (remaining<=0) break;
       const avail = isMalt ? (preferred.breweryQty||0) : (preferred.qty||0);
-      if (avail>0) {
-        const take = Math.min(avail, remaining);
-        if (isMalt) preferred.breweryQty = Math.round((preferred.breweryQty-take)*1000)/1000;
-        else preferred.qty = Math.round((preferred.qty-take)*1000)/1000;
-        remaining -= take;
-        deducted += take;
-      }
+      if (avail<=0) continue;
+      const take = Math.min(avail, remaining);
+      if (isMalt) preferred.breweryQty = Math.round((preferred.breweryQty-take)*1000)/1000;
+      else preferred.qty = Math.round((preferred.qty-take)*1000)/1000;
+      remaining -= take;
+      deducted += take;
     }
   }
 
