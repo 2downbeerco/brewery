@@ -2627,7 +2627,8 @@ function updateActualVolume(id, val) {
   const i = state.brewLogs.findIndex(b=>b.id===id);
   if (i<0) return;
   const log = state.brewLogs[i];
-  const oldVal = log.actualVol!=null ? log.actualVol : val;
+  const hadActualVol = log.actualVol!=null;
+  const oldVal = hadActualVol ? log.actualVol : val;
   log.actualVol = val;
 
   const tankId = log.tank || log.execution?.fvTank || null;
@@ -2647,7 +2648,10 @@ function updateActualVolume(id, val) {
     // did we think the total was" reference for computing that delta,
     // rather than defaulting to a no-op zero delta that would leave a
     // stale/wrong volume untouched.
-    const oldValForTank = log.actualVol!=null ? oldVal : (tank.batchVol!=null ? tank.batchVol : val);
+    // (must test the value from BEFORE log.actualVol was overwritten above —
+    // testing log.actualVol here is always true, which made the first
+    // entry compute a zero delta and leave the tank's vol stale)
+    const oldValForTank = hadActualVol ? oldVal : (tank.batchVol!=null ? tank.batchVol : val);
     const ti = state.tanks.findIndex(t=>t.id===tankId);
     const delta = val - oldValForTank;
     state.tanks[ti].vol = Math.max(0, Math.round(((state.tanks[ti].vol||0) + delta)*1000)/1000);
