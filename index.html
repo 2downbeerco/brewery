@@ -3957,6 +3957,7 @@ function renderRMInventory() {
         const batches = (r.batches||[]).filter(b=>!b.inactive);
         const inactiveBatches = (r.batches||[]).filter(b=>b.inactive);
         const totalColor = isAll?(critical?'var(--red)':low?'var(--orange)':'var(--text)'):'var(--text)';
+        const isMaltItem = r.category==="Malt", isHopsItem = r.category==="Hops";
         const uid = r.id!=null ? String(r.id) : r.name;
         const expanded = window._rmExpanded!=null && window._rmExpanded===uid;
 
@@ -3990,9 +3991,9 @@ function renderRMInventory() {
             <div class="tbl-wrap"><table class="tbl" style="font-size:13px;">
               <thead><tr>
                 <th>Batch No.</th>
-                ${isMaltTab?'<th>Warehouse</th><th>Brewery</th>':'<th>Qty</th>'}
-                ${isMaltTab?'<th>Extract LDK</th>':''}
-                ${isHopsTab?'<th>Alpha Acid %</th>':''}
+                ${isMaltItem?'<th>Warehouse</th><th>Brewery</th>':'<th>Qty</th>'}
+                ${isMaltItem?'<th>Extract LDK</th>':''}
+                ${isHopsItem?'<th>Alpha Acid %</th>':''}
                 <th>Cost/unit</th>
                 <th>Delivery</th>
                 <th></th>
@@ -4002,13 +4003,13 @@ function renderRMInventory() {
                   const bi = r.batches.indexOf(b); // true index into r.batches, since `batches` above is filtered
                   return `<tr>
                   <td><strong>${b.batchNo||'—'}</strong></td>
-                  ${isMaltTab?`<td>${b.warehouseQty||0} ${r.unit}</td><td>${b.breweryQty||0} ${r.unit}</td>`:`<td>${b.qty||0} ${r.unit}</td>`}
-                  ${isMaltTab?`<td>${b.extractLdk!=null?b.extractLdk:'—'}</td>`:''}
-                  ${isHopsTab?`<td>${b.alphaAcid!=null?b.alphaAcid+'%':'—'}</td>`:''}
+                  ${isMaltItem?`<td>${b.warehouseQty||0} ${r.unit}</td><td>${b.breweryQty||0} ${r.unit}</td>`:`<td>${b.qty||0} ${r.unit}</td>`}
+                  ${isMaltItem?`<td>${b.extractLdk!=null?b.extractLdk:'—'}</td>`:''}
+                  ${isHopsItem?`<td>${b.alphaAcid!=null?b.alphaAcid+'%':'—'}</td>`:''}
                   <td style="color:var(--muted);">${b.cost?'₹'+b.cost:' —'}</td>
                   <td style="color:var(--muted);">${b.deliveryDate?fmtDate(b.deliveryDate):'—'}</td>
                   <td style="white-space:nowrap;">
-                    ${isMaltTab?`<button class="btn btn-ghost btn-sm" onclick="openBatchTransfer(${r.id},${bi})" style="margin-right:4px;">🏭</button>`:''}
+                    ${isMaltItem?`<button class="btn btn-ghost btn-sm" onclick="openBatchTransfer(${r.id},${bi})" style="margin-right:4px;">🏭</button>`:''}
                     <button class="btn btn-ghost btn-sm" onclick="openEditBatch(${r.id},${bi})">✏️</button>
                     <button class="btn btn-ghost btn-sm" onclick="deleteBatch(${r.id},${bi})" style="margin-left:4px;">🗑</button>
                   </td>
@@ -4016,7 +4017,7 @@ function renderRMInventory() {
               </tbody>
             </table></div>`}
 
-            ${isMaltTab&&batches.length?`
+            ${isMaltItem&&batches.length?`
             <div style="margin-top:8px;font-size:12px;color:var(--muted);">
               Total: Warehouse <strong>${batches.reduce((s,b)=>s+(b.warehouseQty||0),0)} ${r.unit}</strong> · Brewery <strong>${batches.reduce((s,b)=>s+(b.breweryQty||0),0)} ${r.unit}</strong>
             </div>`:''}
