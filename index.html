@@ -5731,7 +5731,7 @@ function confirmRecordWastage() {
 function renderSchedule() {
   const filter=window._schedFilter||'All';
   const items=filter==='All'?state.schedule:state.schedule.filter(s=>s.status===filter);
-  const sorted=[...items].sort((a,b)=>a.date.localeCompare(b.date));
+  const sorted=[...items].sort((a,b)=>(b.date||'').localeCompare(a.date||''));
   return `
     <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:20px;flex-wrap:wrap;">
       <div style="display:flex;gap:8px;">${['All','Planned','Completed','Cancelled'].map(s=>`<button class="btn btn-sm ${filter===s?'btn-primary':'btn-ghost'}" onclick="setSchedFilter('${s}')">${s}</button>`).join('')}</div>
