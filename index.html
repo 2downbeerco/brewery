@@ -1048,7 +1048,8 @@ function printRecipe(id) {
     </table>
   </div>`;
 
-  const yeastFormLabel = log.yeastForm==='dry'?'Dried':log.yeastForm==='slurry'?'Slurry':'Rehydrated';
+  // Unset counts as Dried — that's what the Yeast Form dropdown displays (its first option) when nothing has been chosen
+  const yeastFormLabel = log.yeastForm==='rehydrated'?'Rehydrated':log.yeastForm==='slurry'?'Slurry':'Dried';
 
   const html = `<!DOCTYPE html>
 <html>
@@ -1271,7 +1272,7 @@ function printBrewDayWorksheet(id) {
     <div class="step-title">🧫 Yeast Pitch</div>
     <div class="step-body">
       <div style="font-size:11px;color:#666;margin-bottom:6px;">
-        Recipe: ${log.yeastForm==='dry'?'Dried':'Rehydrated/Slurry'} · ${(log.yeast||[]).map(y=>y.name+(y.qty?' ('+y.qty+' '+y.unit+')':'')).join(', ')||'—'}
+        Recipe: ${log.yeastForm==='rehydrated'?'Rehydrated':log.yeastForm==='slurry'?'Slurry':'Dried'} · ${(log.yeast||[]).map(y=>y.name+(y.qty?' ('+y.qty+' '+y.unit+')':'')).join(', ')||'—'}
       </div>
       <div class="field-row">${blankLine('Pitch Time')}${blankLine('Wort Temp at Pitch','°C')}${blankLine('OG °Plato')}</div>
       <div class="fl">Notes</div><div class="notes-box"></div>
@@ -1750,7 +1751,7 @@ function renderBrewDetail(id) {
     // ── Step 10: Yeast Pitch ───────────────────────────────────────────────
     const s10 = stepCard('🧫','Yeast Pitch', ex.yeastPitchDone, `
       <div style="font-size:12px;color:var(--muted);margin-bottom:8px;">
-        Recipe: ${log.yeastForm==='dry'?'Dried':'Rehydrated/Slurry'} · 
+        Recipe: ${log.yeastForm==='rehydrated'?'Rehydrated':log.yeastForm==='slurry'?'Slurry':'Dried'} · 
         ${(log.yeast||[]).map(y=>y.name+(y.qty?' ('+y.qty+' '+y.unit+')':'')).join(', ')||'—'}
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;">
