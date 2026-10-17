@@ -5081,7 +5081,10 @@ function savePO(){
     if (!isNew && oldItem) {
       const oldBatchNo = oldItem.batchNo || ('PO-'+id);
       if (oldBatchNo !== batchNo) {
-        const oldBi = r.batches.findIndex(b=>b.batchNo===oldBatchNo);
+        let oldBi = r.batches.findIndex(b=>b.batchNo===oldBatchNo);
+        // Older invoices saved before an ID existed got a batch literally named
+        // "PO-undefined" — find that one too (same delivery date) so it can be renamed.
+        if (oldBi<0) oldBi = r.batches.findIndex(b=>b.batchNo==='PO-undefined' && (!po.deliveryDate || b.deliveryDate===po.deliveryDate));
         if (oldBi>=0) r.batches[oldBi].batchNo = batchNo;
       }
     }
