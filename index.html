@@ -1341,6 +1341,8 @@ function renderBrewDetail(id) {
     const r = state.rawMaterials.find(x=>x.id==rmId);
     if (!r || !r.batches) return [];
     return r.batches.filter(b=>!b.inactive).map(b=>({
+      bid:         ensureBatchBid(b),
+      remaining:   r.category==='Malt' ? (b.breweryQty||0) : (b.qty||0),
       batchNo:     b.batchNo,
       extractLdk:  b.extractLdk  != null ? b.extractLdk  : null,
       alphaAcid:   b.alphaAcid   != null ? b.alphaAcid   : null,
@@ -1380,8 +1382,8 @@ function renderBrewDetail(id) {
       // Batch selector row
       let batchRow = '';
       if (rm && batches.length > 0) {
-        const batchOpts = batches.map(b=>`<option value="${b.batchNo}" ${ing.batchNo===b.batchNo?'selected':''}>${b.batchNo}${b.deliveryDate?' ('+fmtDate(b.deliveryDate)+')':''}</option>`).join('');
-        const picked = batches.find(b=>b.batchNo===ing.batchNo) || batches[0];
+        const picked = pickLot(ing, batches);
+        const batchOpts = batches.map(b=>lotOptionHtml(b, picked)).join('');
         const extra = (isMalt&&picked?.extractLdk!=null) ? `LDK ${picked.extractLdk}` : (isHops&&picked?.alphaAcid!=null) ? `AA ${picked.alphaAcid}%` : '';
         batchRow = `
           <div style="display:flex;align-items:center;gap:6px;margin-top:4px;">
@@ -1427,8 +1429,8 @@ function renderBrewDetail(id) {
     return items.map((ing,idx)=>{
       const rm = state.rawMaterials.find(r=>r.id==ing.rmId);
       const batches = rm ? getBatches(rm.id) : [];
-      const picked = batches.find(b=>b.batchNo===ing.batchNo) || batches[0] || null;
-      const batchOpts = batches.map(b=>`<option value="${b.batchNo}" ${ing.batchNo===b.batchNo?'selected':''}>${b.batchNo}${b.deliveryDate?' ('+fmtDate(b.deliveryDate)+')':''}</option>`).join('');
+      const picked = pickLot(ing, batches);
+      const batchOpts = batches.map(b=>lotOptionHtml(b, picked)).join('');
       if (!canEdit) {
         return `<div style="padding:9px 0;border-bottom:1px solid var(--border);">
           <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
@@ -2153,21 +2155,25 @@ function updateBrewCheck(id, key, val) {
 }
 
 
-function selectIngBatch(section, idx, batchNo) {
+function selectIngBatch(section, idx, lotId) {
   const id = window._openBrewId;
   const i = state.brewLogs.findIndex(b=>b.id===id);
   if (i<0) return;
   const ing = state.brewLogs[i][section][idx];
-  ing.batchNo = batchNo;
   // Look up batch details from the raw material's own batches array —
-  // the current source of truth, not purchase order history.
+  // the current source of truth, not purchase order history. lotId is the
+  // lot's stable _bid (several lots can share one batch no.); a plain batch
+  // no. is still accepted as a fallback.
   const rm = state.rawMaterials.find(r=>r.id==ing.rmId);
-  const b = rm?.batches?.find(x=>x.batchNo===batchNo);
+  const b = rm?.batches?.find(x=>x._bid===lotId) || rm?.batches?.find(x=>x.batchNo===lotId);
+  const lotNeedsId = !!b && !b._bid;
+  ing.batchNo  = b ? b.batchNo : lotId;
+  ing.batchBid = b ? ensureBatchBid(b) : undefined;
   if (b) {
     if (b.extractLdk != null) ing.extractLdk = b.extractLdk;
     if (b.alphaAcid  != null) ing.alphaAcid  = b.alphaAcid;
   }
-  saveState(['brewLogs']); renderContent();
+  saveState(lotNeedsId ? ['brewLogs','rawMaterials'] : ['brewLogs']); renderContent();
 }
 
 function addIng(section, hintCat) {
@@ -2194,7 +2200,7 @@ function removeIng(section, idx) {
   // deducted forever with no ingredient line left to account for it.
   if (log.status === 'Completed' && log.inventoryDeducted && ing?.rmId && ing.qty>0) {
     const rm = state.rawMaterials.find(r=>r.id==ing.rmId);
-    if (rm) { adjustRMStock(rm, -ing.qty, ing.batchNo); dirtyKeys.push('rawMaterials'); }
+    if (rm) { adjustRMStock(rm, -ing.qty, ing.batchNo, ing.batchBid); dirtyKeys.push('rawMaterials'); }
   }
   state.brewLogs[i][section].splice(idx, 1);
   saveState(dirtyKeys); renderContent();
@@ -2222,7 +2228,7 @@ function updateIng(section, idx, field, val) {
     const delta = (val||0) - oldQty;
     if (delta !== 0 && ing.rmId) {
       const rm = state.rawMaterials.find(r=>r.id==ing.rmId);
-      if (rm) { adjustRMStock(rm, delta, ing.batchNo); dirtyKeys.push('rawMaterials'); }
+      if (rm) { adjustRMStock(rm, delta, ing.batchNo, ing.batchBid); dirtyKeys.push('rawMaterials'); }
       else toast(`Raw material not found — quantity updated but stock not adjusted`, false);
     }
   }
@@ -2234,7 +2240,7 @@ function updateIng(section, idx, field, val) {
     if (qty > 0) {
       if (ing.rmId) {
         const oldRm = state.rawMaterials.find(r=>r.id==ing.rmId);
-        if (oldRm) { adjustRMStock(oldRm, -qty, ing.batchNo); dirtyKeys.push('rawMaterials'); }
+        if (oldRm) { adjustRMStock(oldRm, -qty, ing.batchNo, ing.batchBid); dirtyKeys.push('rawMaterials'); }
       }
       const newRm = state.rawMaterials.find(r=>r.id==val);
       if (newRm) { adjustRMStock(newRm, qty, null); dirtyKeys.push('rawMaterials'); }
@@ -2257,10 +2263,12 @@ function updateIng(section, idx, field, val) {
       const picked = batches.length ? [...batches].sort((a,b)=>(b.deliveryDate||'').localeCompare(a.deliveryDate||''))[0] : null;
       if (picked) {
         state.brewLogs[i][section][idx].batchNo    = picked.batchNo;
+        state.brewLogs[i][section][idx].batchBid   = ensureBatchBid(picked);
         if (picked.extractLdk != null) state.brewLogs[i][section][idx].extractLdk = picked.extractLdk;
         if (picked.alphaAcid  != null) state.brewLogs[i][section][idx].alphaAcid  = picked.alphaAcid;
       } else {
         state.brewLogs[i][section][idx].batchNo    = '';
+        state.brewLogs[i][section][idx].batchBid   = undefined;
         state.brewLogs[i][section][idx].extractLdk = null;
         state.brewLogs[i][section][idx].alphaAcid  = null;
       }
@@ -2513,13 +2521,45 @@ function updateBrewField(field, val) {
 // disagree with whichever batch actually got deducted. Any quantity still
 // needed beyond what the preferred batch has falls back to FIFO by
 // delivery date across the rest.
-function deductFromBatches(rm, qtyNeeded, preferredBatchNo) {
+// Several lots can share one supplier batch number (same lot delivered on
+// different dates), so a lot is identified by its stable _bid, not its batch no.
+function ensureBatchBid(b) {
+  if (b && !b._bid) b._bid = 'b'+Date.now().toString(36)+Math.random().toString(36).slice(2,8);
+  return b && b._bid;
+}
+// Which lot an ingredient line points at: its saved _bid if it has one,
+// otherwise the oldest lot carrying its batch no. (what stock deduction uses).
+function pickLot(ing, lots) {
+  if (ing.batchBid) { const m = lots.find(l=>l.bid===ing.batchBid); if (m) return m; }
+  const same = lots.filter(l=>l.batchNo===ing.batchNo).sort((a,b)=>(a.deliveryDate||'').localeCompare(b.deliveryDate||''));
+  return same[0] || lots[0] || null;
+}
+function lotOptionHtml(l, picked) {
+  const q = l.remaining!=null ? ' · '+(Math.round(l.remaining*100)/100)+' left' : '';
+  return `<option value="${l.bid}" ${picked && picked.bid===l.bid?'selected':''}>${l.batchNo}${l.deliveryDate?' ('+fmtDate(l.deliveryDate)+')':''}${q}</option>`;
+}
+
+function deductFromBatches(rm, qtyNeeded, preferredBatchNo, preferredBid) {
   if (!rm.batches || !rm.batches.length || qtyNeeded<=0) return 0;
   const isMalt = rm.category==='Malt';
   let remaining = qtyNeeded;
   let deducted = 0;
 
-  if (preferredBatchNo) {
+  if (preferredBid) {
+    // The exact lot the brewer picked comes first.
+    const lot = rm.batches.find(b=>b._bid===preferredBid);
+    if (lot) {
+      const avail = isMalt ? (lot.breweryQty||0) : (lot.qty||0);
+      const take = Math.min(avail, remaining);
+      if (take>0) {
+        if (isMalt) lot.breweryQty = Math.round((lot.breweryQty-take)*1000)/1000;
+        else lot.qty = Math.round((lot.qty-take)*1000)/1000;
+        remaining -= take; deducted += take;
+      }
+    }
+  }
+
+  if (preferredBatchNo && remaining>0) {
     // More than one physical batch can legitimately share the same batch
     // number (e.g. the same supplier lot delivered across two separate
     // invoices) — drain every batch under this name, oldest delivery
@@ -2580,16 +2620,17 @@ function adjustRMByDelta(rmName, delta, preferredBatchNo) {
 // negative delta adds back, into preferredBatchNo if it still exists,
 // otherwise the most recent batch (matching the Stock Take / Adjust
 // convention).
-function adjustRMStock(rm, delta, preferredBatchNo) {
+function adjustRMStock(rm, delta, preferredBatchNo, preferredBid) {
   if (!delta) return;
   if (delta > 0) {
-    deductFromBatches(rm, delta, preferredBatchNo);
+    deductFromBatches(rm, delta, preferredBatchNo, preferredBid);
   } else {
     const addBack = -delta;
     if (!rm.batches || !rm.batches.length) {
       rm.batches = [{ batchNo: 'ADJ-'+Date.now(), deliveryDate: new Date().toISOString().slice(0,10), cost: rm.lastCost||0, qty: addBack }];
     } else {
-      let target = preferredBatchNo ? rm.batches.find(b=>b.batchNo===preferredBatchNo) : null;
+      let target = preferredBid ? rm.batches.find(b=>b._bid===preferredBid) : null;
+      if (!target && preferredBatchNo) target = rm.batches.find(b=>b.batchNo===preferredBatchNo);
       if (!target) {
         const sorted = [...rm.batches].sort((a,b)=>(b.deliveryDate||'').localeCompare(a.deliveryDate||''));
         target = sorted[0];
@@ -2746,7 +2787,7 @@ function completeBrew(id) {
   allIngs.forEach(ing=>{
     const rm = state.rawMaterials.find(r=>r.id==ing.rmId);
     if (rm) {
-      const deducted = deductFromBatches(rm, ing.qty, ing.batchNo);
+      const deducted = deductFromBatches(rm, ing.qty, ing.batchNo, ing.batchBid);
       rmStatus(rm);
       if (deducted < ing.qty - 0.001) {
         shortfalls.push(`${rm.name}: needed ${ing.qty}${ing.unit||''}, only ${deducted}${ing.unit||''} deducted`);
@@ -4361,6 +4402,7 @@ function fixBrewLogIds() {
         const picked = batches.length ? [...batches].sort((a,c)=>(c.deliveryDate||'').localeCompare(a.deliveryDate||''))[0] : null;
         if (picked) {
           ing.batchNo = picked.batchNo;
+          ing.batchBid = ensureBatchBid(picked);
           if (picked.extractLdk != null) ing.extractLdk = picked.extractLdk;
           if (picked.alphaAcid  != null) ing.alphaAcid  = picked.alphaAcid;
         }
