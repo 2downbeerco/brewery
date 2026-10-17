@@ -983,6 +983,7 @@ function copyBrewLog(sourceId) {
     brewer: '', tank: '', notes: '',
     mashTemp: src.mashTemp, mashTime: src.mashTime, boilTime: src.boilTime, yieldEst: '',
     ogTarget: src.ogTarget, fgTarget: src.fgTarget,
+    yeastForm: src.yeastForm, fermTemp: src.fermTemp,
     grains: cloneIngs(src.grains), hops: cloneIngs(src.hops), yeast: cloneIngs(src.yeast),
     other: cloneIngs(src.other), boilAdd: cloneIngs(src.boilAdd),
     mash: JSON.parse(JSON.stringify(src.mash||{})),
@@ -1049,6 +1050,7 @@ function printRecipe(id) {
   </div>`;
 
   // Unset counts as Dried — that's what the Yeast Form dropdown displays (its first option) when nothing has been chosen
+  const fermTempLabel = (log.fermTemp!=null && log.fermTemp!=='') ? log.fermTemp+' °C' : '—';
   const yeastFormLabel = log.yeastForm==='rehydrated'?'Rehydrated':log.yeastForm==='slurry'?'Slurry':'Dried';
 
   const html = `<!DOCTYPE html>
@@ -1087,6 +1089,7 @@ function printRecipe(id) {
     <div>Target ABV<strong>${log.targetABV!=null?log.targetABV+'%':'—'}</strong></div>
     <div>Brewer<strong>${log.brewer||'—'}</strong></div>
     <div>Yeast Form<strong>${yeastFormLabel}</strong></div>
+    <div>Fermentation Temp<strong>${fermTempLabel}</strong></div>
     <div>Boil Time<strong>${log.boilTime||'—'} min</strong></div>
     <div>Preboil / Postboil Vol<strong>${log.preboilVol||'—'} / ${log.postboilVol||'—'} L</strong></div>
   </div>
@@ -1272,7 +1275,7 @@ function printBrewDayWorksheet(id) {
     <div class="step-title">🧫 Yeast Pitch</div>
     <div class="step-body">
       <div style="font-size:11px;color:#666;margin-bottom:6px;">
-        Recipe: ${log.yeastForm==='rehydrated'?'Rehydrated':log.yeastForm==='slurry'?'Slurry':'Dried'} · ${(log.yeast||[]).map(y=>y.name+(y.qty?' ('+y.qty+' '+y.unit+')':'')).join(', ')||'—'}
+        Recipe: ${log.yeastForm==='rehydrated'?'Rehydrated':log.yeastForm==='slurry'?'Slurry':'Dried'} · ${(log.yeast||[]).map(y=>y.name+(y.qty?' ('+y.qty+' '+y.unit+')':'')).join(', ')||'—'}${(log.fermTemp!=null&&log.fermTemp!=='')?' · Ferment at '+log.fermTemp+' °C':''}
       </div>
       <div class="field-row">${blankLine('Pitch Time')}${blankLine('Wort Temp at Pitch','°C')}${blankLine('OG °Plato')}</div>
       <div class="fl">Notes</div><div class="notes-box"></div>
@@ -1754,7 +1757,7 @@ function renderBrewDetail(id) {
     const s10 = stepCard('🧫','Yeast Pitch', ex.yeastPitchDone, `
       <div style="font-size:12px;color:var(--muted);margin-bottom:8px;">
         Recipe: ${log.yeastForm==='rehydrated'?'Rehydrated':log.yeastForm==='slurry'?'Slurry':'Dried'} · 
-        ${(log.yeast||[]).map(y=>y.name+(y.qty?' ('+y.qty+' '+y.unit+')':'')).join(', ')||'—'}
+        ${(log.yeast||[]).map(y=>y.name+(y.qty?' ('+y.qty+' '+y.unit+')':'')).join(', ')||'—'}${(log.fermTemp!=null&&log.fermTemp!=='')?' · Ferment at '+log.fermTemp+' °C':''}
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;">
         ${tf('yeastPitchTime','Pitch Time','HH:MM')}
@@ -1912,13 +1915,20 @@ function renderBrewDetail(id) {
 
       <div class="brew-section">
         <div class="brew-section-title">🧫 Yeast</div>
-        <div class="form-group" style="margin-bottom:10px;">
-          <label class="lbl">Yeast Form</label>
-          <select class="inp inp-sm" style="max-width:200px;" ${!canEdit?'disabled':''} onchange="updateLog(${id},'yeastForm',this.value)">
-            <option value="dry" ${log.yeastForm==='dry'?'selected':''}>Dried</option>
-            <option value="rehydrated" ${log.yeastForm==='rehydrated'?'selected':''}>Rehydrated</option>
-            <option value="slurry" ${log.yeastForm==='slurry'?'selected':''}>Slurry</option>
-          </select>
+        <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:10px;">
+          <div class="form-group" style="margin-bottom:0;">
+            <label class="lbl">Yeast Form</label>
+            <select class="inp inp-sm" style="width:200px;" ${!canEdit?'disabled':''} onchange="updateLog(${id},'yeastForm',this.value)">
+              <option value="dry" ${log.yeastForm==='dry'?'selected':''}>Dried</option>
+              <option value="rehydrated" ${log.yeastForm==='rehydrated'?'selected':''}>Rehydrated</option>
+              <option value="slurry" ${log.yeastForm==='slurry'?'selected':''}>Slurry</option>
+            </select>
+          </div>
+          <div class="form-group" style="margin-bottom:0;">
+            <label class="lbl">Fermentation Temp (°C)</label>
+            <input class="inp inp-sm" type="number" step="0.5" style="width:200px;" placeholder="e.g. 19" value="${log.fermTemp!=null&&log.fermTemp!==''?log.fermTemp:''}" ${!canEdit?'disabled':''}
+              onchange="updateLog(${id},'fermTemp',this.value===''?'':+this.value)">
+          </div>
         </div>
         ${ingRows('yeast', log.yeast, ['Yeast'])}
       </div>
