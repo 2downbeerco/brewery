@@ -1003,6 +1003,16 @@ function renderBatchCost() {
     byBeer[k] = byBeer[k] || { cost:0, vol:0, n:0 };
     byBeer[k].cost += c.total; byBeer[k].vol += c.vol; byBeer[k].n++;
   });
+  // Overall = total cost of all costed brews ÷ total litres of those brews
+  const allCost = Object.values(byBeer).reduce((s,x)=>s+x.cost,0);
+  const allVol  = Object.values(byBeer).reduce((s,x)=>s+x.vol,0);
+  const allN    = Object.values(byBeer).reduce((s,x)=>s+x.n,0);
+  const overallCard = allVol>0 ? `
+    <div style="background:var(--text);color:var(--surface);border-radius:10px;padding:10px 16px;min-width:200px;">
+      <div style="font-size:12px;opacity:0.75;">All brews · ${allN} batch${allN!==1?'es':''} · ${Math.round(allVol).toLocaleString('en-IN')} L</div>
+      <div style="font-size:22px;font-weight:700;margin-top:2px;">${fmtInr(allCost/allVol)}<span style="font-size:12px;font-weight:500;opacity:0.75;"> /L</span></div>
+      <div style="font-size:11px;opacity:0.75;margin-top:1px;">${fmtInr(allCost,0)} total ingredient cost</div>
+    </div>` : '';
   const beerCards = Object.keys(byBeer).map(k=>`
     <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px 14px;min-width:150px;">
       <div style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);"><span style="width:10px;height:10px;border-radius:3px;background:${beerColor(k)};"></span>${beerName(k)} · ${byBeer[k].n} batch${byBeer[k].n!==1?'es':''}</div>
@@ -1063,7 +1073,7 @@ function renderBatchCost() {
         <label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" ${opts.transport?'checked':''} onchange="setBcOpt('transport',this.checked)"> Include transport</label>
       </div>
     </div>
-    ${beerCards?`<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px;">${beerCards}</div>`:''}
+    ${beerCards?`<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px;align-items:stretch;">${overallCard}${beerCards}</div>`:''}
     ${body}
     <div style="font-size:12px;color:var(--muted);margin-top:10px;">⚠ marks a brew with a line that has no cost on file, a lot that couldn't be matched, or no actual volume. Click a row for the ingredient breakdown.</div>`;
 }
