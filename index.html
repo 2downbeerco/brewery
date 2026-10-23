@@ -881,7 +881,204 @@ function renderBrewLog() {
   return renderBrewList();
 }
 
+
+// ── Landed cost & per-litre batch costing ─────────────────────────────────────
+// A purchase order's Delivery Charge is shared across that order's items in
+// proportion to each line's value (qty × unit cost, before GST). E.g. a ₹110
+// invoice = wheat ₹60 + magnum ₹40 + ₹10 transport → ₹6 to the wheat, ₹4 to the
+// magnum. Worked out on the fly from the PO, so editing a PO's delivery charge
+// (or adding one to an old PO) updates every cost that depends on it.
+const COST_FROM = '2026-09-01';          // batches brewed before this date are not costed
+const BC_SECTIONS = [['grains','Malt / grain'],['hops','Hops'],['boilAdd','Boil addition'],['yeast','Yeast'],['other','Other']];
+window._bcOpts = window._bcOpts || { gst:true, transport:true };
+window._bcOpen = window._bcOpen || {};
+
+function poLineTransport(po, item) {
+  const dc = +po.deliveryCharge || 0;
+  const sub = (po.items||[]).reduce((s,i)=>s+(i.qty||0)*(i.unitCost||0),0);
+  const line = (item.qty||0)*(item.unitCost||0);
+  if (dc<=0 || sub<=0 || line<=0) return { share:0, gstPct:+po.deliveryGstPct||0 };
+  return { share: dc*line/sub, gstPct:+po.deliveryGstPct||0 };
+}
+// Which PO line a stock lot came from: same item, same batch no., same delivery date.
+function findPOForLot(rm, lot) {
+  const name = (rm.name||'').trim().toLowerCase();
+  let found = null;
+  (state.purchaseOrders||[]).forEach(po=>{
+    (po.items||[]).forEach(it=>{
+      if (found || (it.name||'').trim().toLowerCase()!==name) return;
+      const eff = it.batchNo || ('PO-'+po.id);
+      const same = eff===lot.batchNo || (lot.batchNo==='PO-undefined' && !it.batchNo);
+      const dateOk = !lot.deliveryDate || !po.deliveryDate || po.deliveryDate===lot.deliveryDate;
+      if (same && dateOk) found = { po, item:it };
+    });
+  });
+  return found;
+}
+// Cost of ONE unit (kg / g / sheet …) of a lot, split into goods and transport.
+function lotUnitCost(rm, lot, opts) {
+  const base = +lot.cost || 0, gstPct = +lot.gstPct || 0;
+  let t = 0, tg = 0;
+  const hit = findPOForLot(rm, lot);
+  if (hit && hit.item.qty>0) { const a = poLineTransport(hit.po, hit.item); t = a.share/hit.item.qty; tg = a.gstPct; }
+  const goods = opts.gst ? base*(1+gstPct/100) : base;
+  const transport = opts.transport ? (opts.gst ? t*(1+tg/100) : t) : 0;
+  return { goods, transport, unit:goods+transport, hasPO:!!hit };
+}
+function costIngLine(log, ing, section, opts) {
+  const rm = state.rawMaterials.find(r=>r.id==ing.rmId);
+  const out = { section, name: ing.name || (rm&&rm.name) || '?', qty:+ing.qty||0, unit: ing.unit || (rm&&rm.unit) || '',
+                lot:'', goodsPer:0, transPer:0, cost:0, flag:'' };
+  if (!rm) { out.flag = 'No raw material linked'; return out; }
+  const byDateAsc  = (a,b)=>(a.deliveryDate||'').localeCompare(b.deliveryDate||'');
+  const byDateDesc = (a,b)=>(b.deliveryDate||'').localeCompare(a.deliveryDate||'');
+  let lot = null, note = '';
+  if (ing.batchBid) lot = (rm.batches||[]).find(b=>b._bid===ing.batchBid) || null;
+  if (!lot && ing.batchNo && ing.batchNo!=='-') {
+    const same = (rm.batches||[]).filter(b=>b.batchNo===ing.batchNo).sort(byDateAsc);
+    lot = same[0] || null;
+    if (same.length>1 && !ing.batchBid) note = 'Several lots share this batch no. — oldest used';
+  }
+  if (!lot) {
+    const costed = (rm.batches||[]).filter(b=>(+b.cost||0)>0).sort(byDateDesc);
+    lot = costed.find(b=>!b.deliveryDate || !log.date || b.deliveryDate<=log.date) || costed[0] || null;
+    if (lot && section!=='Filtration') note = (ing.batchNo && ing.batchNo!=='-') ? 'Lot "'+ing.batchNo+'" not found — latest cost on file used' : 'No lot selected — latest cost on file used';
+  }
+  if (!lot) { out.flag = 'No cost on file'; return out; }
+  const c = lotUnitCost(rm, lot, opts);
+  out.goodsPer = c.goods; out.transPer = c.transport;
+  out.lot = (lot.batchNo||'—') + (lot.deliveryDate ? ' · '+fmtDate(lot.deliveryDate) : '');
+  out.cost = out.qty * c.unit;
+  out.flag = (+lot.cost||0)>0 ? note : 'No cost on file for this lot';
+  return out;
+}
+function costBrewLines(log, opts) {
+  const lines = [];
+  BC_SECTIONS.forEach(([key,label])=>{
+    (log[key]||[]).forEach(ing=>{
+      if (!(+ing.qty>0)) return;
+      if (!ing.rmId && !ing.name) return;
+      lines.push(costIngLine(log, ing, label, opts));
+    });
+  });
+  [['filterSheetsQty','Filter Sheets'],['spindasolQty','Spindasol']].forEach(([f,name])=>{
+    const q = +log[f] || 0;
+    if (q>0) {
+      const rm = state.rawMaterials.find(r=>(r.name||'').toLowerCase()===name.toLowerCase());
+      lines.push(costIngLine(log, { rmId: rm?rm.id:null, name, qty:q, unit: rm?rm.unit:'' }, 'Filtration', opts));
+    }
+  });
+  return lines;
+}
+function batchCostSummary(log, opts) {
+  const lines = costBrewLines(log, opts);
+  const goods = lines.reduce((s,l)=>s+l.qty*l.goodsPer,0);
+  const transport = lines.reduce((s,l)=>s+l.qty*l.transPer,0);
+  const total = goods + transport;
+  const hasActual = log.actualVol!=null && +log.actualVol>0;
+  const vol = hasActual ? +log.actualVol : (+log.targetVol>0 ? +log.targetVol : 0);
+  return { lines, goods, transport, total, vol, volSource: hasActual?'actual':'planned',
+           perL: vol>0 ? total/vol : null, flags: lines.filter(l=>l.flag).length };
+}
+function fmtInr(n, d) {
+  if (n==null || isNaN(n)) return '—';
+  return '₹' + n.toLocaleString('en-IN',{minimumFractionDigits:d==null?2:d, maximumFractionDigits:d==null?2:d});
+}
+function setBcOpt(k, v) { window._bcOpts[k] = !!v; renderContent(); }
+function toggleBcOpen(id) { window._bcOpen[id] = !window._bcOpen[id]; renderContent(); }
+function setBrewListTab(t) { window._brewListTab = t; renderContent(); }
+
+function renderBatchCost() {
+  const opts = window._bcOpts;
+  const logs = state.brewLogs
+    .filter(b => (b.date||'') >= COST_FROM && b.status !== 'Draft')
+    .sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+  const rows = logs.map(b => ({ b, c: batchCostSummary(b, opts) }));
+
+  // Average by beer = total cost ÷ total litres across that beer's costed batches
+  const byBeer = {};
+  rows.forEach(({b,c})=>{
+    if (!(c.vol>0)) return;
+    const k = b.beer;
+    byBeer[k] = byBeer[k] || { cost:0, vol:0, n:0 };
+    byBeer[k].cost += c.total; byBeer[k].vol += c.vol; byBeer[k].n++;
+  });
+  const beerCards = Object.keys(byBeer).map(k=>`
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px 14px;min-width:150px;">
+      <div style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);"><span style="width:10px;height:10px;border-radius:3px;background:${beerColor(k)};"></span>${beerName(k)} · ${byBeer[k].n} batch${byBeer[k].n!==1?'es':''}</div>
+      <div style="font-size:18px;font-weight:700;margin-top:2px;">${fmtInr(byBeer[k].cost/byBeer[k].vol)}<span style="font-size:12px;font-weight:500;color:var(--muted);"> /L</span></div>
+    </div>`).join('');
+
+  const detail = (c) => `
+    <div style="padding:12px 16px 16px;background:var(--bg);">
+      <div class="tbl-wrap"><table class="tbl" style="font-size:12.5px;">
+        <thead><tr><th>Section</th><th>Ingredient</th><th>Lot used</th><th style="text-align:right;">Qty</th>
+          <th style="text-align:right;">Goods / unit</th>${opts.transport?'<th style="text-align:right;">Transport / unit</th>':''}<th style="text-align:right;">Cost</th></tr></thead>
+        <tbody>${c.lines.map(l=>`<tr>
+          <td style="color:var(--muted);">${l.section}</td>
+          <td><strong>${l.name}</strong>${l.flag?`<div style="font-size:11px;color:#B45309;">⚠ ${l.flag}</div>`:''}</td>
+          <td style="color:var(--muted);">${l.lot||'—'}</td>
+          <td style="text-align:right;">${Math.round(l.qty*100)/100} ${l.unit}</td>
+          <td style="text-align:right;">${fmtInr(l.goodsPer)}</td>
+          ${opts.transport?`<td style="text-align:right;">${l.transPer>0?fmtInr(l.transPer):'—'}</td>`:''}
+          <td style="text-align:right;font-weight:600;">${fmtInr(l.cost)}</td></tr>`).join('') || `<tr><td colspan="7" class="empty">No ingredients recorded on this brew.</td></tr>`}</tbody>
+        <tfoot><tr><td colspan="${opts.transport?6:5}" style="text-align:right;font-weight:700;">Total</td><td style="text-align:right;font-weight:700;">${fmtInr(c.total)}</td></tr></tfoot>
+      </table></div>
+    </div>`;
+
+  const statusClass = { 'In Progress':'badge-orange', Completed:'badge-green' };
+  const body = rows.length===0 ? `<div class="empty" style="background:var(--surface);border:1px solid var(--border);border-radius:12px;">No brews logged since ${fmtDate(COST_FROM)} yet.</div>` : `
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden;">
+      <div class="tbl-wrap"><table class="tbl" style="font-size:13.5px;">
+        <thead><tr><th>Brew date</th><th>Beer · Batch</th><th>Status</th><th style="text-align:right;">Volume</th>
+          <th style="text-align:right;">Ingredients</th>${opts.transport?'<th style="text-align:right;">Transport</th>':''}<th style="text-align:right;">Total</th><th style="text-align:right;">₹ / litre</th></tr></thead>
+        <tbody>${rows.map(({b,c})=>{
+          const open = !!window._bcOpen[b.id];
+          const warn = c.flags>0 || c.volSource==='planned' || !(c.vol>0);
+          const tip = [c.flags>0 ? c.flags+' line(s) need a look' : '', c.volSource==='planned' ? 'Actual volume not entered — planned volume used' : '', !(c.vol>0)?'No volume entered':''].filter(Boolean).join(' · ');
+          return `<tr style="cursor:pointer;" onclick="toggleBcOpen(${b.id})">
+            <td style="white-space:nowrap;">${open?'▾':'▸'} ${fmtDate(b.date)}</td>
+            <td><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:${beerColor(b.beer)};margin-right:6px;"></span><strong>${beerName(b.beer)}</strong> · ${b.batchNo||'—'}</td>
+            <td><span class="badge ${statusClass[b.status]||'badge-gray'}">${b.status}</span></td>
+            <td style="text-align:right;white-space:nowrap;">${c.vol>0?c.vol+' L':'—'}<div style="font-size:10.5px;color:var(--muted);">${c.vol>0?c.volSource:''}</div></td>
+            <td style="text-align:right;">${fmtInr(c.goods)}</td>
+            ${opts.transport?`<td style="text-align:right;">${fmtInr(c.transport)}</td>`:''}
+            <td style="text-align:right;font-weight:600;">${fmtInr(c.total)}</td>
+            <td style="text-align:right;font-weight:700;font-size:15px;white-space:nowrap;">${c.perL!=null?fmtInr(c.perL):'—'}${warn?` <span title="${tip}" style="color:#B45309;font-size:13px;">⚠</span>`:''}</td>
+          </tr>${open?`<tr><td colspan="${opts.transport?8:7}" style="padding:0;">${detail(c)}</td></tr>`:''}`;
+        }).join('')}</tbody>
+      </table></div>
+    </div>`;
+
+  return `
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:12px;">
+      <div>
+        <div style="font-size:18px;font-weight:700;">Batch Cost</div>
+        <div style="font-size:13px;color:var(--muted);margin-top:2px;max-width:620px;">
+          Cost of every ingredient used in a brew ÷ actual batch volume (planned volume if actual isn't entered).
+          Brews since ${fmtDate(COST_FROM)} only. Each line uses the cost of the lot picked on the brew, plus that lot's share of its invoice's delivery charge.</div>
+      </div>
+      <div style="display:flex;gap:16px;align-items:center;font-size:13px;">
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" ${opts.gst?'checked':''} onchange="setBcOpt('gst',this.checked)"> Include GST</label>
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" ${opts.transport?'checked':''} onchange="setBcOpt('transport',this.checked)"> Include transport</label>
+      </div>
+    </div>
+    ${beerCards?`<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px;">${beerCards}</div>`:''}
+    ${body}
+    <div style="font-size:12px;color:var(--muted);margin-top:10px;">⚠ marks a brew with a line that has no cost on file, a lot that couldn't be matched, or no actual volume. Click a row for the ingredient breakdown.</div>`;
+}
+
+function brewListTabBar() {
+  const t = window._brewListTab === 'cost' ? 'cost' : 'list';
+  const btn = (id,label)=>`<button onclick="setBrewListTab('${id}')" style="padding:8px 16px;border:0;background:none;cursor:pointer;font-size:14px;font-weight:${t===id?700:500};color:${t===id?'var(--text)':'var(--muted)'};border-bottom:2px solid ${t===id?'var(--orange)':'transparent'};margin-bottom:-1px;">${label}</button>`;
+  return `<div style="display:flex;gap:4px;border-bottom:1px solid var(--border);margin-bottom:18px;">${btn('list','Brews')}${btn('cost','Batch Cost')}</div>`;
+}
+
 function renderBrewList() {
+  return brewListTabBar() + (window._brewListTab==='cost' ? renderBatchCost() : renderBrewListMain());
+}
+
+function renderBrewListMain() {
   const logs = [...state.brewLogs].sort((a,b)=>b.date.localeCompare(a.date));
   const statusClass = { Draft:'badge-gray', 'In Progress':'badge-orange', Completed:'badge-green' };
 
@@ -4081,6 +4278,7 @@ function renderRMInventory() {
                 ${isMaltItem?'<th>Extract LDK</th>':''}
                 ${isHopsItem?'<th>Alpha Acid %</th>':''}
                 <th>Cost/unit</th>
+                <th title="Cost per unit incl. GST and this lot's share of the invoice's delivery charge">Landed/unit</th>
                 <th>Delivery</th>
                 <th></th>
               </tr></thead>
@@ -4093,6 +4291,7 @@ function renderRMInventory() {
                   ${isMaltItem?`<td>${b.extractLdk!=null?b.extractLdk:'—'}</td>`:''}
                   ${isHopsItem?`<td>${b.alphaAcid!=null?b.alphaAcid+'%':'—'}</td>`:''}
                   <td style="color:var(--muted);">${b.cost?'₹'+b.cost:' —'}</td>
+                  <td>${(()=>{ if(!b.cost) return '<span style="color:var(--muted);">—</span>'; const lc=lotUnitCost(r,b,{gst:true,transport:true}); return '₹'+lc.unit.toFixed(2)+(lc.transport>0?`<div style="font-size:10.5px;color:var(--muted);">incl. ₹${lc.transport.toFixed(2)} transport</div>`:''); })()}</td>
                   <td style="color:var(--muted);">${b.deliveryDate?fmtDate(b.deliveryDate):'—'}</td>
                   <td style="white-space:nowrap;">
                     ${isMaltItem?`<button class="btn btn-ghost btn-sm" onclick="openBatchTransfer(${r.id},${bi})" style="margin-right:4px;">🏭</button>`:''}
@@ -4331,7 +4530,7 @@ function renderPOList() {
         <div style="border-top:1px solid var(--border);padding-top:14px;margin-top:4px;">
           <div style="display:flex;gap:10px;margin-bottom:12px;align-items:flex-end;flex-wrap:wrap;">
             <div class="form-group" style="width:140px;">
-              <label class="lbl">Delivery Charge (₹)</label>
+              <label class="lbl" title="Shared across the items above in proportion to their value">Delivery / Transport (₹)</label>
               <input class="inp" id="po-delivery-charge" type="number" step="0.01" value="0" oninput="updatePOTotals()">
             </div>
             <div class="form-group" style="width:100px;">
@@ -4350,6 +4549,7 @@ function renderPOList() {
               </select>
             </div>
           </div>
+          <div style="font-size:12px;color:var(--muted);margin:-4px 0 12px;">The delivery charge is split across the items above in proportion to their value, and becomes part of each item's cost in Batch Cost.</div>
           <div style="background:var(--bg);border-radius:8px;padding:12px 16px;font-size:13px;">
             <div style="display:flex;justify-content:space-between;margin-bottom:4px;"><span style="color:var(--muted);">Subtotal</span><span id="po-subtotal">₹0.00</span></div>
             <div style="display:flex;justify-content:space-between;margin-bottom:4px;"><span style="color:var(--muted);">GST (items)</span><span id="po-gst-total">₹0.00</span></div>
@@ -5015,6 +5215,7 @@ function renderPOItems(){
         ${reorderField}
         <div style="font-size:12px;color:var(--muted);text-align:right;padding-bottom:2px;">
           Subtotal incl. GST:<br><strong style="font-size:14px;color:var(--text);">₹${((item.qty||0)*(item.unitCost||0)*(1+(item.gst||0)/100)).toFixed(2)}</strong>
+          <div id="po-tshare-${idx}" style="font-size:11px;margin-top:3px;"></div>
         </div>
       </div>
     </div>`;
@@ -5022,6 +5223,7 @@ function renderPOItems(){
 
   // Fresh listeners each render — this fn rebuilds the DOM nodes above, so
   // any previously-attached autocomplete listener is gone with them.
+  updatePOTotals();   // refreshes each line's transport share
   _poItems.forEach((item, idx) => {
     attachAutocomplete(
       document.getElementById(`po-item-name-${idx}`),
@@ -5083,6 +5285,16 @@ function updatePOTotals(){
   document.getElementById('po-delivery-total').textContent='₹'+dc.toFixed(2);
   document.getElementById('po-delivery-gst-total').textContent='₹'+deliveryGst.toFixed(2);
   document.getElementById('po-grand-total').textContent='₹'+grand.toFixed(2);
+  // Show how the delivery charge is shared out: in proportion to each line's value (before GST)
+  _poItems.forEach((it,idx)=>{
+    const el=document.getElementById('po-tshare-'+idx);
+    if(!el) return;
+    const line=(it.qty||0)*(it.unitCost||0);
+    if(!(dc>0)||!(sub>0)||!(line>0)){ el.innerHTML=''; return; }
+    const share=dc*line/sub;
+    el.innerHTML=`<span style="color:var(--orange);">Transport share: <strong>₹${share.toFixed(2)}</strong>${dgst?` + GST ₹${(share*dgst/100).toFixed(2)}`:''}</span>`
+      +(it.qty>0?`<br><span style="color:var(--muted);">₹${(share/it.qty).toFixed(2)} per ${it.unit||'unit'}</span>`:'');
+  });
 }
 
 function savePO(){
