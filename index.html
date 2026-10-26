@@ -5361,6 +5361,7 @@ function savePO(){
     return oldItem;
   };
 
+  let _poUnitCascade = false;
   validItems.forEach(item=>{
     const name=item.name.trim();
     if(!name||!item.qty)return;
@@ -5375,6 +5376,17 @@ function savePO(){
     }
     const r=state.rawMaterials[i];
     if(!r.batches) r.batches=[];
+    // Invoice unit differs from the raw material's unit → offer to switch the
+    // raw material (and the recipes using it) to the invoice unit.
+    if (item.unit && r.unit && item.unit!==r.unit &&
+        confirm(`"${r.name}" is stocked in "${r.unit}" but this invoice line says "${item.unit}".\n\nOK = change ${r.name}'s unit to "${item.unit}" (recipes using it update too).\nCancel = keep "${r.unit}".`)) {
+      r.unit = item.unit;
+      state.brewLogs.forEach(log=>{
+        [...(log.grains||[]),...(log.hops||[]),...(log.yeast||[]),...(log.other||[]),...(log.boilAdd||[])].forEach(ing=>{
+          if (ing.rmId == r.id) { ing.unit = item.unit; _poUnitCascade = true; }
+        });
+      });
+    }
     const isMalt=r.category==='Malt', isHops=r.category==='Hops';
     const batchNo=item.batchNo||('PO-'+po.id);
 
@@ -5446,7 +5458,7 @@ function savePO(){
     });
   }
 
-  saveState(['purchaseOrders','rawMaterials']);closePOModal();renderContent();
+  saveState(_poUnitCascade ? ['purchaseOrders','rawMaterials','brewLogs'] : ['purchaseOrders','rawMaterials']);closePOModal();renderContent();
   toast(`✓ Invoice saved & stock updated for ${validItems.length} item(s)`);
 }
 
