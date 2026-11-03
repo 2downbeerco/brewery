@@ -1792,7 +1792,7 @@ function renderBrewDetail(id) {
 
   // ── Stock check ───────────────────────────────────────────────────────────
   function stockCheck() {
-    const allIngs = [...log.grains,...log.hops,...log.yeast,...log.other];
+    const allIngs = [...log.grains,...log.hops,...log.yeast,...log.other,...(log.boilAdd||[])];
     if (!allIngs.length) return '';
     const rows = allIngs.filter(i=>i.rmId).map(i=>{
       const rm = state.rawMaterials.find(r=>r.id==i.rmId);
@@ -3012,7 +3012,7 @@ function completeBrew(id) {
   }
 
   // Build deduction summary — check against actual batch-level brewery stock, not derived .stock
-  const allIngs = [...log.grains,...log.hops,...log.yeast,...log.other].filter(i=>i.rmId&&i.qty>0);
+  const allIngs = [...log.grains,...log.hops,...log.yeast,...log.other,...(log.boilAdd||[])].filter(i=>i.rmId&&i.qty>0);
   const issues = [];
   allIngs.forEach(ing=>{
     const rm = state.rawMaterials.find(r=>r.id==ing.rmId);
