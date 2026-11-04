@@ -970,15 +970,27 @@ function costBrewLines(log, opts) {
   });
   return lines;
 }
-function batchCostSummary(log, opts) {
-  const lines = costBrewLines(log, opts);
+// One common transport figure for every batch: all delivery charges on invoices
+// received since COST_FROM (plus GST on them if GST is included) ÷ total litres
+// brewed in that period. The same ₹/litre is added to every batch — it does not
+// vary from brew to brew.
+function commonTransportTotal(opts) {
+  return (state.purchaseOrders||[])
+    .filter(po => (po.deliveryDate||'') >= COST_FROM && po.status !== 'Draft')
+    .reduce((s,po)=> s + (+po.deliveryCharge||0) * (opts.gst ? 1 + (+po.deliveryGstPct||0)/100 : 1), 0);
+}
+function batchCostSummary(log, opts, transportRate) {
+  // Ingredient cost only — no per-lot transport allocation.
+  const lines = costBrewLines(log, { gst: opts.gst, transport: false });
   const goods = lines.reduce((s,l)=>s+l.qty*l.goodsPer,0);
-  const transport = lines.reduce((s,l)=>s+l.qty*l.transPer,0);
+  const hasActualV = log.actualVol!=null && +log.actualVol>0;
+  const volForT = hasActualV ? +log.actualVol : (+log.targetVol>0 ? +log.targetVol : 0);
+  const transport = (opts.transport && transportRate>0) ? transportRate*volForT : 0;
   const total = goods + transport;
   const hasActual = log.actualVol!=null && +log.actualVol>0;
   const vol = hasActual ? +log.actualVol : (+log.targetVol>0 ? +log.targetVol : 0);
   return { lines, goods, transport, total, vol, volSource: hasActual?'actual':'planned',
-           perL: vol>0 ? total/vol : null, flags: lines.filter(l=>l.flag).length };
+           perL: vol>0 ? total/vol : null, ingPerL: vol>0 ? goods/vol : null, flags: lines.filter(l=>l.flag).length };
 }
 function fmtInr(n, d) {
   if (n==null || isNaN(n)) return '—';
@@ -993,7 +1005,11 @@ function renderBatchCost() {
   const logs = state.brewLogs
     .filter(b => (b.date||'') >= COST_FROM && b.status !== 'Draft')
     .sort((a,b)=>(b.date||'').localeCompare(a.date||''));
-  const rows = logs.map(b => ({ b, c: batchCostSummary(b, opts) }));
+  const pre = logs.map(b => batchCostSummary(b, opts, 0));
+  const costedLitres = pre.reduce((s,c)=>s+(c.vol>0?c.vol:0),0);
+  const transportTotal = commonTransportTotal(opts);
+  const transportRate = (opts.transport && costedLitres>0) ? transportTotal/costedLitres : 0;
+  const rows = logs.map(b => ({ b, c: batchCostSummary(b, opts, transportRate) }));
 
   // Average by beer = total cost ÷ total litres across that beer's costed batches
   const byBeer = {};
@@ -1011,7 +1027,8 @@ function renderBatchCost() {
     <div style="background:var(--text);color:var(--surface);border-radius:10px;padding:10px 16px;min-width:200px;">
       <div style="font-size:12px;opacity:0.75;">All brews · ${allN} batch${allN!==1?'es':''} · ${Math.round(allVol).toLocaleString('en-IN')} L</div>
       <div style="font-size:22px;font-weight:700;margin-top:2px;">${fmtInr(allCost/allVol)}<span style="font-size:12px;font-weight:500;opacity:0.75;"> /L</span></div>
-      <div style="font-size:11px;opacity:0.75;margin-top:1px;">${fmtInr(allCost,0)} total ingredient cost</div>
+      <div style="font-size:11px;opacity:0.75;margin-top:1px;">${opts.transport ? 'Ingredients '+fmtInr((allCost-transportRate*allVol)/allVol)+'/L + common transport '+fmtInr(transportRate)+'/L' : 'Ingredients only'}</div>
+      <div style="font-size:11px;opacity:0.75;">${fmtInr(allCost,0)} total</div>
     </div>` : '';
   const beerCards = Object.keys(byBeer).map(k=>`
     <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px 14px;min-width:150px;">
@@ -1023,16 +1040,15 @@ function renderBatchCost() {
     <div style="padding:12px 16px 16px;background:var(--bg);">
       <div class="tbl-wrap"><table class="tbl" style="font-size:12.5px;">
         <thead><tr><th>Section</th><th>Ingredient</th><th>Lot used</th><th style="text-align:right;">Qty</th>
-          <th style="text-align:right;">Goods / unit</th>${opts.transport?'<th style="text-align:right;">Transport / unit</th>':''}<th style="text-align:right;">Cost</th></tr></thead>
+          <th style="text-align:right;">Cost / unit</th><th style="text-align:right;">Cost</th></tr></thead>
         <tbody>${c.lines.map(l=>`<tr>
           <td style="color:var(--muted);">${l.section}</td>
           <td><strong>${l.name}</strong>${l.flag?`<div style="font-size:11px;color:#B45309;">⚠ ${l.flag}</div>`:''}</td>
           <td style="color:var(--muted);">${l.lot||'—'}</td>
           <td style="text-align:right;">${Math.round(l.qty*100)/100} ${l.unit}</td>
           <td style="text-align:right;">${fmtInr(l.goodsPer)}</td>
-          ${opts.transport?`<td style="text-align:right;">${l.transPer>0?fmtInr(l.transPer):'—'}</td>`:''}
-          <td style="text-align:right;font-weight:600;">${fmtInr(l.cost)}</td></tr>`).join('') || `<tr><td colspan="7" class="empty">No ingredients recorded on this brew.</td></tr>`}</tbody>
-        <tfoot><tr><td colspan="${opts.transport?6:5}" style="text-align:right;font-weight:700;">Total</td><td style="text-align:right;font-weight:700;">${fmtInr(c.total)}</td></tr></tfoot>
+          <td style="text-align:right;font-weight:600;">${fmtInr(l.cost)}</td></tr>`).join('') || `<tr><td colspan="6" class="empty">No ingredients recorded on this brew.</td></tr>`}</tbody>
+        <tfoot><tr><td colspan="5" style="text-align:right;font-weight:700;">Ingredients</td><td style="text-align:right;font-weight:700;">${fmtInr(c.goods)}</td></tr>${opts.transport?`<tr><td colspan="5" style="text-align:right;color:var(--muted);">+ Common transport (${fmtInr(transportRate)}/L × ${c.vol} L)</td><td style="text-align:right;color:var(--muted);">${fmtInr(c.transport)}</td></tr><tr><td colspan="5" style="text-align:right;font-weight:700;">Total</td><td style="text-align:right;font-weight:700;">${fmtInr(c.total)}</td></tr>`:''}</tfoot>
       </table></div>
     </div>`;
 
@@ -1041,7 +1057,7 @@ function renderBatchCost() {
     <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden;">
       <div class="tbl-wrap"><table class="tbl" style="font-size:13.5px;">
         <thead><tr><th>Brew date</th><th>Beer · Batch</th><th>Status</th><th style="text-align:right;">Volume</th>
-          <th style="text-align:right;">Ingredients</th>${opts.transport?'<th style="text-align:right;">Transport</th>':''}<th style="text-align:right;">Total</th><th style="text-align:right;">₹ / litre</th></tr></thead>
+          <th style="text-align:right;">Ingredients</th>${opts.transport?'<th style="text-align:right;">Transport (common)</th>':''}<th style="text-align:right;">Total</th><th style="text-align:right;">₹ / litre</th></tr></thead>
         <tbody>${rows.map(({b,c})=>{
           const open = !!window._bcOpen[b.id];
           const warn = c.flags>0 || c.volSource==='planned' || !(c.vol>0);
@@ -1066,7 +1082,8 @@ function renderBatchCost() {
         <div style="font-size:18px;font-weight:700;">Batch Cost</div>
         <div style="font-size:13px;color:var(--muted);margin-top:2px;max-width:620px;">
           Cost of every ingredient used in a brew ÷ actual batch volume (planned volume if actual isn't entered).
-          Brews since ${fmtDate(COST_FROM)} only. Each line uses the cost of the lot picked on the brew, plus that lot's share of its invoice's delivery charge.</div>
+          Brews since ${fmtDate(COST_FROM)} only. Each line uses the cost of the lot picked on the brew. Transport is one common ₹/litre figure applied to every batch (not worked out per brew).</div>
+        ${opts.transport ? `<div style="font-size:12.5px;margin-top:8px;padding:8px 12px;background:var(--bg);border-radius:8px;max-width:620px;">Common transport: <strong>${fmtInr(transportRate)}/L</strong> = ${fmtInr(transportTotal,0)} of delivery charges on invoices received since ${fmtDate(COST_FROM)} ÷ ${Math.round(costedLitres).toLocaleString('en-IN')} L brewed in that time.</div>` : ''}
       </div>
       <div style="display:flex;gap:16px;align-items:center;font-size:13px;">
         <label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" ${opts.gst?'checked':''} onchange="setBcOpt('gst',this.checked)"> Include GST</label>
