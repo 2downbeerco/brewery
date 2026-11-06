@@ -5338,6 +5338,7 @@ function savePO(){
 
   // Snapshot old items BEFORE any mutation — needed for correct qty delta on edits
   const oldItems = (!isNew ? state.purchaseOrders.find(x=>x.id===id)?.items : null) || [];
+  const prevDelivery = (!isNew ? state.purchaseOrders.find(x=>x.id===id)?.deliveryDate : null) || null; // delivery date before this edit
 
   const po={
     vendor,
@@ -5380,6 +5381,16 @@ function savePO(){
   };
 
   let _poUnitCascade = false;
+  // The same supplier batch number can arrive on several deliveries (e.g. 22 Sep and
+  // 25 Oct), so a lot must be found by batch no. AND delivery date — matching on batch
+  // no. alone picked the oldest delivery and updated the wrong lot.
+  const lotIdxFor = (r, bn) => {
+    let i = r.batches.findIndex(b=>b.batchNo===bn && po.deliveryDate && b.deliveryDate===po.deliveryDate);
+    if (i<0 && prevDelivery) i = r.batches.findIndex(b=>b.batchNo===bn && b.deliveryDate===prevDelivery);   // delivery date edited on this invoice
+    if (i<0) i = r.batches.findIndex(b=>b.batchNo===bn && (!b.deliveryDate || !po.deliveryDate));
+    if (i<0 && !r.batches.some(b=>b.batchNo===bn && b.deliveryDate && po.deliveryDate && b.deliveryDate!==po.deliveryDate)) i = r.batches.findIndex(b=>b.batchNo===bn);
+    return i;
+  };
   validItems.forEach(item=>{
     const name=item.name.trim();
     if(!name||!item.qty)return;
@@ -5419,7 +5430,7 @@ function savePO(){
     if (!isNew && oldItem) {
       const oldBatchNo = oldItem.batchNo || ('PO-'+id);
       if (oldBatchNo !== batchNo) {
-        let oldBi = r.batches.findIndex(b=>b.batchNo===oldBatchNo);
+        let oldBi = lotIdxFor(r, oldBatchNo);
         // Older invoices saved before an ID existed got a batch literally named
         // "PO-undefined" — find that one too (same delivery date) so it can be renamed.
         if (oldBi<0) oldBi = r.batches.findIndex(b=>b.batchNo==='PO-undefined' && (!po.deliveryDate || b.deliveryDate===po.deliveryDate));
@@ -5429,12 +5440,12 @@ function savePO(){
 
     if(qtyDelta === 0 && !isNew) {
       // No qty change — still update cost/metadata
-      const bi=r.batches.findIndex(b=>b.batchNo===batchNo);
+      const bi=lotIdxFor(r, batchNo);
       if(bi>=0) { r.batches[bi].cost=item.unitCost||0; r.batches[bi].gstPct=item.gst||0; if(isMalt&&item.extractLdk!=null) r.batches[bi].extractLdk=item.extractLdk; if(isHops&&item.alphaAcid!=null) r.batches[bi].alphaAcid=item.alphaAcid; }
       return;
     }
 
-    const existingBi=r.batches.findIndex(b=>b.batchNo===batchNo);
+    const existingBi=lotIdxFor(r, batchNo);
     if(existingBi>=0){
       // Update existing batch qty by delta
       if(isMalt) r.batches[existingBi].warehouseQty=Math.max(0,(r.batches[existingBi].warehouseQty||0)+qtyDelta);
