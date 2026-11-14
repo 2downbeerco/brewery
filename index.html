@@ -999,6 +999,7 @@ function fmtInr(n, d) {
 function setBcOpt(k, v) { window._bcOpts[k] = !!v; renderContent(); }
 function toggleBcOpen(id) { window._bcOpen[id] = !window._bcOpen[id]; renderContent(); }
 function setBcPeriod(v) { window._bcPeriod = v; renderContent(); }
+function setBcSel(v) { window._bcSel = window._bcSel || {}; window._bcSel[window._bcPeriod==='fy'?'fy':'month'] = v; renderContent(); }
 function setBcBeer(k) { window._bcBeer = (window._bcBeer === k) ? null : k; renderContent(); }
 function bcPeriodOf(date, mode) {
   const [y,m] = String(date||'').split('-').map(Number);
@@ -1019,12 +1020,18 @@ function renderBatchCost() {
   const transportRate = (opts.transport && costedLitres>0) ? transportTotal/costedLitres : 0;
   const allRows = logs.map(b => ({ b, c: batchCostSummary(b, opts, transportRate) }));
   const mode = window._bcPeriod === 'fy' ? 'fy' : 'month';
-  const selBeer = (window._bcBeer != null && allRows.some(r=>r.b.beer===window._bcBeer)) ? window._bcBeer : null;
-  const rows = selBeer != null ? allRows.filter(r=>r.b.beer===selBeer) : allRows;
+  // Period picker: every month / FY that has a brew, newest first. Defaults to the latest.
+  const periodOpts = []; allRows.forEach(({b})=>{ const p = bcPeriodOf(b.date, mode); if (!periodOpts.some(o=>o.key===p.key)) periodOpts.push(p); });
+  periodOpts.sort((a,b)=>b.key.localeCompare(a.key));
+  const wantSel = (window._bcSel||{})[mode];
+  const selPeriod = (wantSel==='all' || periodOpts.some(o=>o.key===wantSel)) ? wantSel : (periodOpts[0] ? periodOpts[0].key : 'all');
+  const periodRows = selPeriod==='all' ? allRows : allRows.filter(r=>bcPeriodOf(r.b.date, mode).key===selPeriod);
+  const selBeer = (window._bcBeer != null && periodRows.some(r=>r.b.beer===window._bcBeer)) ? window._bcBeer : null;
+  const rows = selBeer != null ? periodRows.filter(r=>r.b.beer===selBeer) : periodRows;
 
   // Average by beer = total cost ÷ total litres across that beer's costed batches
   const byBeer = {};
-  allRows.forEach(({b,c})=>{
+  periodRows.forEach(({b,c})=>{
     if (!(c.vol>0)) return;
     const k = b.beer;
     byBeer[k] = byBeer[k] || { cost:0, vol:0, n:0 };
@@ -1065,7 +1072,7 @@ function renderBatchCost() {
     </div>`;
 
   const statusClass = { 'In Progress':'badge-orange', Completed:'badge-green' };
-  const body = rows.length===0 ? `<div class="empty" style="background:var(--surface);border:1px solid var(--border);border-radius:12px;">No brews logged since ${fmtDate(COST_FROM)} yet.</div>` : `
+  const body = rows.length===0 ? `<div class="empty" style="background:var(--surface);border:1px solid var(--border);border-radius:12px;">No brews ${allRows.length?'in this period':'logged since '+fmtDate(COST_FROM)+' yet'}.</div>` : `
     <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden;">
       <div class="tbl-wrap"><table class="tbl" style="font-size:13.5px;">
         <thead><tr><th>Brew date</th><th>Beer · Batch</th><th>Status</th><th style="text-align:right;">Volume</th>
@@ -1119,6 +1126,10 @@ function renderBatchCost() {
         <div style="display:inline-flex;border:1px solid var(--border);border-radius:8px;overflow:hidden;">
           ${['month','fy'].map(v=>`<button onclick="setBcPeriod('${v}')" style="padding:6px 14px;border:0;cursor:pointer;font-size:13px;font-weight:600;background:${mode===v?'var(--text)':'var(--surface)'};color:${mode===v?'var(--surface)':'var(--text)'};">${v==='fy'?'FY':'Month'}</button>`).join('')}
         </div>
+        <select onchange="setBcSel(this.value)" style="padding:6px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:var(--surface);color:var(--text);">
+          <option value="all" ${selPeriod==='all'?'selected':''}>${mode==='fy'?'All years':'All months'}</option>
+          ${periodOpts.map(o=>`<option value="${o.key}" ${o.key===selPeriod?'selected':''}>${o.label}</option>`).join('')}
+        </select>
         <label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" ${opts.gst?'checked':''} onchange="setBcOpt('gst',this.checked)"> Include GST</label>
         <label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" ${opts.transport?'checked':''} onchange="setBcOpt('transport',this.checked)"> Include transport</label>
       </div>
