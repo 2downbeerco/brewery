@@ -998,6 +998,14 @@ function fmtInr(n, d) {
 }
 function setBcOpt(k, v) { window._bcOpts[k] = !!v; renderContent(); }
 function toggleBcOpen(id) { window._bcOpen[id] = !window._bcOpen[id]; renderContent(); }
+function setBcPeriod(v) { window._bcPeriod = v; renderContent(); }
+function setBcBeer(k) { window._bcBeer = (window._bcBeer === k) ? null : k; renderContent(); }
+function bcPeriodOf(date, mode) {
+  const [y,m] = String(date||'').split('-').map(Number);
+  if (!y || !m) return { key:'0', label:'No date' };
+  if (mode === 'fy') { const fy = m>=4 ? y : y-1; return { key:'FY'+fy, label:'FY '+fy+'–'+String(fy+1).slice(2)+' (Apr '+fy+' – Mar '+(fy+1)+')' }; }
+  return { key: y+'-'+String(m).padStart(2,'0'), label: new Date(y, m-1, 1).toLocaleString('en-IN',{month:'long', year:'numeric'}) };
+}
 function setBrewListTab(t) { window._brewListTab = t; renderContent(); }
 
 function renderBatchCost() {
@@ -1009,29 +1017,33 @@ function renderBatchCost() {
   const costedLitres = pre.reduce((s,c)=>s+(c.vol>0?c.vol:0),0);
   const transportTotal = commonTransportTotal(opts);
   const transportRate = (opts.transport && costedLitres>0) ? transportTotal/costedLitres : 0;
-  const rows = logs.map(b => ({ b, c: batchCostSummary(b, opts, transportRate) }));
+  const allRows = logs.map(b => ({ b, c: batchCostSummary(b, opts, transportRate) }));
+  const mode = window._bcPeriod === 'fy' ? 'fy' : 'month';
+  const selBeer = (window._bcBeer != null && allRows.some(r=>r.b.beer===window._bcBeer)) ? window._bcBeer : null;
+  const rows = selBeer != null ? allRows.filter(r=>r.b.beer===selBeer) : allRows;
 
   // Average by beer = total cost ÷ total litres across that beer's costed batches
   const byBeer = {};
-  rows.forEach(({b,c})=>{
+  allRows.forEach(({b,c})=>{
     if (!(c.vol>0)) return;
     const k = b.beer;
     byBeer[k] = byBeer[k] || { cost:0, vol:0, n:0 };
     byBeer[k].cost += c.total; byBeer[k].vol += c.vol; byBeer[k].n++;
   });
   // Overall = total cost of all costed brews ÷ total litres of those brews
-  const allCost = Object.values(byBeer).reduce((s,x)=>s+x.cost,0);
-  const allVol  = Object.values(byBeer).reduce((s,x)=>s+x.vol,0);
-  const allN    = Object.values(byBeer).reduce((s,x)=>s+x.n,0);
+  const sel = rows.filter(r=>r.c.vol>0);
+  const allCost = sel.reduce((s,r)=>s+r.c.total,0);
+  const allVol  = sel.reduce((s,r)=>s+r.c.vol,0);
+  const allN    = sel.length;
   const overallCard = allVol>0 ? `
     <div style="background:var(--text);color:var(--surface);border-radius:10px;padding:10px 16px;min-width:200px;">
-      <div style="font-size:12px;opacity:0.75;">All brews · ${allN} batch${allN!==1?'es':''} · ${Math.round(allVol).toLocaleString('en-IN')} L</div>
+      <div style="font-size:12px;opacity:0.75;">${selBeer!=null ? beerName(selBeer) : 'All brews'} · ${allN} batch${allN!==1?'es':''} · ${Math.round(allVol).toLocaleString('en-IN')} L</div>
       <div style="font-size:22px;font-weight:700;margin-top:2px;">${fmtInr(allCost/allVol)}<span style="font-size:12px;font-weight:500;opacity:0.75;"> /L</span></div>
       <div style="font-size:11px;opacity:0.75;margin-top:1px;">${opts.transport ? 'Ingredients '+fmtInr((allCost-transportRate*allVol)/allVol)+'/L + common transport '+fmtInr(transportRate)+'/L' : 'Ingredients only'}</div>
       <div style="font-size:11px;opacity:0.75;">${fmtInr(allCost,0)} total</div>
     </div>` : '';
   const beerCards = Object.keys(byBeer).map(k=>`
-    <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px 14px;min-width:150px;">
+    <div onclick='setBcBeer(${JSON.stringify(k).replace(/'/g,"&#39;")})' title="${selBeer===k?'Click to show all beers':'Click to show only '+beerName(k)+' batches'}" style="cursor:pointer;background:var(--surface);border:${selBeer===k?'2px solid var(--orange)':'1px solid var(--border)'};border-radius:10px;padding:${selBeer===k?'9px 13px':'10px 14px'};min-width:150px;${selBeer!=null&&selBeer!==k?'opacity:0.55;':''}">
       <div style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);"><span style="width:10px;height:10px;border-radius:3px;background:${beerColor(k)};"></span>${beerName(k)} · ${byBeer[k].n} batch${byBeer[k].n!==1?'es':''}</div>
       <div style="font-size:18px;font-weight:700;margin-top:2px;">${fmtInr(byBeer[k].cost/byBeer[k].vol)}<span style="font-size:12px;font-weight:500;color:var(--muted);"> /L</span></div>
     </div>`).join('');
@@ -1058,7 +1070,27 @@ function renderBatchCost() {
       <div class="tbl-wrap"><table class="tbl" style="font-size:13.5px;">
         <thead><tr><th>Brew date</th><th>Beer · Batch</th><th>Status</th><th style="text-align:right;">Volume</th>
           <th style="text-align:right;">Ingredients</th>${opts.transport?'<th style="text-align:right;">Transport (common)</th>':''}<th style="text-align:right;">Total</th><th style="text-align:right;">₹ / litre</th></tr></thead>
-        <tbody>${rows.map(({b,c})=>{
+        <tbody>${(()=>{
+          let lastKey = null, html = '';
+          const groups = {};
+          rows.forEach(r=>{ const k = bcPeriodOf(r.b.date, mode).key; (groups[k] = groups[k] || []).push(r); });
+          const cols = opts.transport?8:7;
+          rows.forEach(({b,c})=>{
+            const per = bcPeriodOf(b.date, mode);
+            if (per.key !== lastKey) {
+              lastKey = per.key;
+              const g = groups[per.key].filter(r=>r.c.vol>0);
+              const gv = g.reduce((s,r)=>s+r.c.vol,0), gc = g.reduce((s,r)=>s+r.c.total,0);
+              html += `<tr style="background:var(--bg);"><td colspan="${cols}" style="padding:10px 16px;font-weight:700;">${per.label}
+                <span style="font-weight:500;color:var(--muted);font-size:12.5px;"> · ${groups[per.key].length} batch${groups[per.key].length!==1?'es':''}${gv>0?' · '+Math.round(gv).toLocaleString('en-IN')+' L · '+fmtInr(gc,0)+' · ':''}</span>${gv>0?`<span style="font-weight:700;">${fmtInr(gc/gv)}/L avg</span>`:''}</td></tr>`;
+            }
+            html += rowHtml(b,c);
+          });
+          return html;
+        })()}</tbody>
+      </table></div>
+    </div>`;
+  function rowHtml(b,c){
           const open = !!window._bcOpen[b.id];
           const warn = c.flags>0 || c.volSource==='planned' || !(c.vol>0);
           const tip = [c.flags>0 ? c.flags+' line(s) need a look' : '', c.volSource==='planned' ? 'Actual volume not entered — planned volume used' : '', !(c.vol>0)?'No volume entered':''].filter(Boolean).join(' · ');
@@ -1072,9 +1104,7 @@ function renderBatchCost() {
             <td style="text-align:right;font-weight:600;">${fmtInr(c.total)}</td>
             <td style="text-align:right;font-weight:700;font-size:15px;white-space:nowrap;">${c.perL!=null?fmtInr(c.perL):'—'}${warn?` <span title="${tip}" style="color:#B45309;font-size:13px;">⚠</span>`:''}</td>
           </tr>${open?`<tr><td colspan="${opts.transport?8:7}" style="padding:0;">${detail(c)}</td></tr>`:''}`;
-        }).join('')}</tbody>
-      </table></div>
-    </div>`;
+  }
 
   return `
     <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:12px;">
@@ -1085,14 +1115,17 @@ function renderBatchCost() {
           Brews since ${fmtDate(COST_FROM)} only. Each line uses the cost of the lot picked on the brew. Transport is one common ₹/litre figure applied to every batch (not worked out per brew).</div>
         ${opts.transport ? `<div style="font-size:12.5px;margin-top:8px;padding:8px 12px;background:var(--bg);border-radius:8px;max-width:620px;">Common transport: <strong>${fmtInr(transportRate)}/L</strong> = ${fmtInr(transportTotal,0)} of delivery charges on invoices received since ${fmtDate(COST_FROM)} ÷ ${Math.round(costedLitres).toLocaleString('en-IN')} L brewed in that time.</div>` : ''}
       </div>
-      <div style="display:flex;gap:16px;align-items:center;font-size:13px;">
+      <div style="display:flex;gap:16px;align-items:center;font-size:13px;flex-wrap:wrap;">
+        <div style="display:inline-flex;border:1px solid var(--border);border-radius:8px;overflow:hidden;">
+          ${['month','fy'].map(v=>`<button onclick="setBcPeriod('${v}')" style="padding:6px 14px;border:0;cursor:pointer;font-size:13px;font-weight:600;background:${mode===v?'var(--text)':'var(--surface)'};color:${mode===v?'var(--surface)':'var(--text)'};">${v==='fy'?'FY':'Month'}</button>`).join('')}
+        </div>
         <label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" ${opts.gst?'checked':''} onchange="setBcOpt('gst',this.checked)"> Include GST</label>
         <label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" ${opts.transport?'checked':''} onchange="setBcOpt('transport',this.checked)"> Include transport</label>
       </div>
     </div>
     ${beerCards?`<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px;align-items:stretch;">${overallCard}${beerCards}</div>`:''}
     ${body}
-    <div style="font-size:12px;color:var(--muted);margin-top:10px;">⚠ marks a brew with a line that has no cost on file, a lot that couldn't be matched, or no actual volume. Click a row for the ingredient breakdown.</div>`;
+    <div style="font-size:12px;color:var(--muted);margin-top:10px;">⚠ marks a brew with a line that has no cost on file, a lot that couldn't be matched, or no actual volume. Click a row for the ingredient breakdown. Click a beer card to see only that beer's batches; click it again to clear. FY runs April–March.</div>`;
 }
 
 function brewListTabBar() {
