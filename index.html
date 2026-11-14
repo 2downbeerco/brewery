@@ -1126,7 +1126,7 @@ function renderBatchCost() {
         <div style="display:inline-flex;border:1px solid var(--border);border-radius:8px;overflow:hidden;">
           ${['month','fy'].map(v=>`<button onclick="setBcPeriod('${v}')" style="padding:6px 14px;border:0;cursor:pointer;font-size:13px;font-weight:600;background:${mode===v?'var(--text)':'var(--surface)'};color:${mode===v?'var(--surface)':'var(--text)'};">${v==='fy'?'FY':'Month'}</button>`).join('')}
         </div>
-        <select onchange="setBcSel(this.value)" style="padding:6px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:var(--surface);color:var(--text);">
+        <select onchange="setBcSel(this.value)" style="width:240px;padding:6px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:var(--surface);color:var(--text);">
           <option value="all" ${selPeriod==='all'?'selected':''}>${mode==='fy'?'All years':'All months'}</option>
           ${periodOpts.map(o=>`<option value="${o.key}" ${o.key===selPeriod?'selected':''}>${o.label}</option>`).join('')}
         </select>
