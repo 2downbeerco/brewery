@@ -942,7 +942,10 @@ function costIngLine(log, ing, section, opts) {
   if (!lot) {
     const costed = (rm.batches||[]).filter(b=>(+b.cost||0)>0).sort(byDateDesc);
     lot = costed.find(b=>!b.deliveryDate || !log.date || b.deliveryDate<=log.date) || costed[0] || null;
-    if (lot && section!=='Filtration') note = (ing.batchNo && ing.batchNo!=='-') ? 'Lot "'+ing.batchNo+'" not found — latest cost on file used' : 'No lot selected — latest cost on file used';
+    const namedLot = !!(ing.batchNo && ing.batchNo!=='-');
+    // Only one lot in stock (e.g. Calcium Chloride) and none picked: nothing to choose, so no warning.
+    const onlyLot = (rm.batches||[]).length===1;
+    if (lot && section!=='Filtration' && (namedLot || !onlyLot)) note = namedLot ? 'Lot "'+ing.batchNo+'" not found — latest cost on file used' : 'No lot selected — latest cost on file used';
   }
   if (!lot) { out.flag = 'No cost on file'; return out; }
   const c = lotUnitCost(rm, lot, opts);
